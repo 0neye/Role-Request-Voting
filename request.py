@@ -1,15 +1,5 @@
-import os
-import dotenv
-from groq import Groq
-from config import PERCENT_ACCEPT
-
-dotenv.load_dotenv()
-API_KEY = os.getenv("GROQ_API_KEY")
-
-client = Groq(
-    api_key=API_KEY,
-)
-print("Groq client loaded.")
+from config import PERCENT_ACCEPT, ROLE_VOTES
+import re
 
 class RoleRequest:
     def __init__(self, user_id: int, thread_id: int, title: str, end_time: int):
@@ -22,25 +12,14 @@ class RoleRequest:
         self.yes_votes: list = [] # List of usernames, vote #
         self.no_votes: list = [] # List of usernames, vote #
 
-        # I'm lazy and wanted to try out groq
-        chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": "Based on the user message, extract the word mentioned. Either 'Excelsior', 'Adept', 'Expert', or 'Paragon'. Do NOT respond with anything else, ever.",
-            },
-            {
-                "role": "user",
-                "content": f"\"{self.title}\"\nRespond with the first matching value. If none is given respond with 'Excelsior'.",
-            }
-        ],
-        model="llama3-8b-8192",
-        temperature=0.2,
-        stream=False,
-        stop=None,
-        timeout=2
-        )
-        self.role = chat_completion.choices[0].message.content.strip().capitalize()
+        roles = ROLE_VOTES.keys()
+
+        for role in roles:
+            match = re.search(role, self.title, re.IGNORECASE)
+            if match:
+                self.role = role
+                break
+
 
         self.id: int = hash(self.user_id + self.end_time)
         print(f"New Request: {self.id} for {self.role}: '{self.title}'")
