@@ -8,6 +8,7 @@ class RequestsManager:
         self.requests: dict = {}
 
     def add_request(self, user_id: int, thread_id: int, title: str, end_time: str) -> int:
+        # Can throw ValueError if the role is invalid
         request = RoleRequest(user_id, thread_id, title, end_time)
         self.requests[request.id] = request
         self.save_state()
