@@ -1,6 +1,5 @@
 import asyncio
 import discord
-from discord import app_commands
 import os
 import dotenv
 from discord.ext import tasks
@@ -8,10 +7,6 @@ from datetime import datetime
 from config import VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID
 from app import RequestsManager
 from request import RoleRequest
-
-intents = discord.Intents.default() # Configure slash commands for the bot
-client = discord.Client(intents=intents)
-tree = app_commands.CommandTree(client)
 
 bot = discord.Bot()
 app = RequestsManager()
@@ -154,7 +149,6 @@ async def on_ready():
         end_time = request.end_time
         bot.add_view(VoteView(thread_owner, thread_id, thread_title, end_time))
 
-
 @bot.event
 async def on_thread_create(thread: discord.Thread):
     # Create an active role request for the first time
@@ -167,10 +161,8 @@ async def on_thread_create(thread: discord.Thread):
         vote_message = await thread.send("Vote now!", view=VoteView(thread_owner, thread_id, thread_title, end_time))
         app.update_bot_message_id(thread_id, vote_message.id)
 
- # Help text contents
+# Help command contents
 help_text = """
-
-**Help**
 
 __Source code:__ <https://github.com/0neye/Role-Request-Voting>
 
@@ -182,12 +174,15 @@ After a set amount of time, the bot will show the results of the poll and automa
 ...and its as simple as that, with no slash commands needed for operation!
 """
 
-@tree.command(name="help", description='instructions for using bot, and provides a link to source code') # Help command
-async def help(interaction:discord.interaction):
-    interaction.response.send_message(help_text)
+@bot.command(description="Instructions for using bot, and provides a link to source code")
+async def help(ctx):
+    await ctx.respond(help_text)
+
+@bot.command(description="end a vote in a given thread early")
+async def end_vote(ctx):
+    await ctx.respond(f"Vote ended by "+ctx.user.display_name)
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
-
 
 bot.run(TOKEN)
