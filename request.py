@@ -1,4 +1,4 @@
-from config import PERCENT_ACCEPT, ROLE_VOTES
+from config import PERCENT_ACCEPT, VALID_ROLES
 import re
 
 class RoleRequest:
@@ -12,9 +12,8 @@ class RoleRequest:
         self.yes_votes: list = [] # List of usernames, vote #
         self.no_votes: list = [] # List of usernames, vote #
 
-        roles = ROLE_VOTES.keys()
 
-        for role in roles:
+        for role in VALID_ROLES:
             match = re.search(role, self.title, re.IGNORECASE)
             if match:
                 self.role = role
