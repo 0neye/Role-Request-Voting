@@ -13,6 +13,16 @@ ROLE_VOTES = {
     "Paragon": PARAGON_VOTE
 }
 
-#CHANNEL_ID = 1239797645372035124  # Forum channel ID
+# Roles to be voted on
+VALID_ROLES = [
+    "Excelsior",
+    "Adept",
+    "Expert",
+    "Paragon",
+    "Artisan",
+    "Visionary"
+]
+
+# CHANNEL_ID = 1240462346808463362  # Forum channel ID
 CHANNEL_ID = 1234633395578077285 # TODO: remove this before sending pull request and uncomment the above line
 STATE_FILE_NAME = 'requests_state.json'

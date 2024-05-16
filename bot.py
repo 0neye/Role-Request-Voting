@@ -3,6 +3,7 @@ import discord
 import os
 import dotenv
 from discord.ext import tasks
+from discord import Embed, Colour
 from datetime import datetime
 from config import VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID
 from app import RequestsManager
@@ -55,12 +56,33 @@ class VoteView(discord.ui.View):
             await end_vote(self)
 
 async def _finish_vote(thread: discord.Thread, request: RoleRequest):
-    # Edit the original "Vote now!" message to show the vote results and remove the view
+    # Edit the original bot message to show the vote results and remove the view
     print("Editing vote message to show results...")
     try:
         vote_message = await thread.fetch_message(request.bot_message_id)
         yes_votes, no_votes = request.get_votes()
-        await vote_message.edit(content=f"Voting has ended.\nResults:\nYes: {yes_votes}\nNo: {no_votes}", view=None)
+
+        total_votes = yes_votes + no_votes
+        yes_percentage = (yes_votes / total_votes) * 100 if total_votes > 0 else 0
+        no_percentage = (no_votes / total_votes) * 100 if total_votes > 0 else 0
+
+        if total_votes == 0:
+            vote_bar = "No votes cast."
+        else:
+            BLUE = "\u001b[34m"
+            RED = "\u001b[31m"
+            RESET = "\u001b[0m"
+            yes_bars = round((yes_votes / total_votes) * 50)
+            no_bars = round((no_votes / total_votes) * 50)
+            vote_bar = f"```ansi\n{BLUE}{'|' * yes_bars}{RESET}{RED}{'|' * no_bars}{RESET}```"
+
+        embed = Embed(title=f"Voting Results - {request.role}", colour=Colour.blue())
+        embed.add_field(name="Yes Votes", value=f"{yes_votes} ({yes_percentage:.2f}%)", inline=True)
+        embed.add_field(name="No Votes", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True)
+        embed.add_field(name="", value=vote_bar, inline=False)
+
+        await vote_message.edit(content=None, embed=embed, view=None)
+
     except discord.NotFound:
         print("Vote message not found.")
     except discord.HTTPException as e:
@@ -89,9 +111,7 @@ async def end_vote(self: VoteView):
     app.remove_request(self.id)
     try:
         if not give_role:
-            await thread.send(f"Sorry, {self.thread_owner.mention}! You have not been given the role.")
-            # await _finish_vote(thread, request)
-            # return
+            await thread.send(f"Sorry, {self.thread_owner.mention}! Your application for {request.role} has been denied.")
 
         # Get guild and role from the discord api
         guild = bot.get_channel(CHANNEL_ID).guild
@@ -100,8 +120,6 @@ async def end_vote(self: VoteView):
 
         if not role:
             await thread.send(f"Error: Role {role.name} not found in the server.")
-            # await _finish_vote(thread, request)
-            # return
 
         # Get the member from the user (yes it's confusing)
         member = guild.get_member(self.thread_owner.id) or await guild.fetch_member(self.thread_owner.id)
@@ -109,24 +127,20 @@ async def end_vote(self: VoteView):
 
         if not member:
             await thread.send(f"Error: Member {self.thread_owner.mention} not found in the server.")
-            # await _finish_vote(thread, request)
-            # return
         
         # Add the role to the user if possible
         print("Adding role...")
         if member.id == member.guild.owner_id:
             print("Cannot modify roles of the server owner.")
             await thread.send(f"Error: Cannot modify roles of the server owner, {self.thread_owner.mention}.")
-            # _finish_vote(thread, request)
         else:
             await member.add_roles(role)
             print("Role added successfully.")
-            await thread.send(f"Congratulations, {self.thread_owner.mention}! You have been given the {role.name} role.")
-            # _finish_vote(thread, request)
+            await thread.send(f"Congratulations, {self.thread_owner.mention}! Your application for {request.role} has been approved.")
+
     except discord.Forbidden:
         print("Bot does not have permission to add roles.")
         await thread.send(f"Error: Bot does not have permission to add roles, {self.thread_owner.mention}.")
-        # _finish_vote(thread, request)
     except discord.HTTPException as e:
         print(f"Failed to add role: {e}")
         await thread.send(f"Failed to add role due to an error: {e}, {self.thread_owner.mention}.")
@@ -158,7 +172,18 @@ async def on_thread_create(thread: discord.Thread):
         thread_title = thread.name
         thread_id = thread.id
         end_time = datetime.utcnow().timestamp() + VOTE_TIME_PERIOD
-        vote_message = await thread.send("Vote now!", view=VoteView(thread_owner, thread_id, thread_title, end_time))
+
+        view = VoteView(thread_owner, thread_id, thread_title, end_time)
+        request = app.get_request(view.id)
+
+        embed = discord.Embed(
+            title="Role Application",
+            description=f"{thread_owner.mention} is applying for {request.role}! Do you think they meet the standards required? Take a look at their ships in-game and then vote below.",
+            color=discord.Color.blue()
+        )
+
+        vote_message = await thread.send(embed=embed, view=view)
+
         app.update_bot_message_id(thread_id, vote_message.id)
 
 # Help command contents
