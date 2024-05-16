@@ -23,6 +23,5 @@ VALID_ROLES = [
     "Visionary"
 ]
 
-# CHANNEL_ID = 1240462346808463362  # Forum channel ID
-CHANNEL_ID = 1234633395578077285 # TODO: remove this before sending pull request and uncomment the above line
+CHANNEL_ID = 1240462346808463362  # Forum channel ID
 STATE_FILE_NAME = 'requests_state.json'
