@@ -5,7 +5,7 @@ import dotenv
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime
-from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID, VETOER_ROLES
+from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID, VETOER_ROLES, DEV_MODE
 from app import RequestsManager
 from request import RoleRequest
 
@@ -36,7 +36,7 @@ class VoteView(discord.ui.View):
         user: discord.User = interaction.user
 
         # People can't vote on their own requests
-        if user.id == self.thread_owner.id:
+        if user.id == self.thread_owner.id and not DEV_MODE:
             await interaction.response.send_message("You can't vote on your own request!", ephemeral=True)
             return
 
@@ -203,7 +203,7 @@ async def on_thread_create(thread: discord.Thread):
         owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(thread.owner_id)
 
         # People can't apply for a role they already have
-        if request.role in [role.name for role in owner_m.roles]:
+        if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
             await thread.send(f"Error: You already have the role {request.role}.")
             app.remove_request(thread_id)
             return
@@ -241,7 +241,7 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Accept", "D
 
     # Make sure they have the perms
     for role in ctx.user.roles:
-        if role.name in VETOER_ROLES:
+        if role.name in VETOER_ROLES or DEV_MODE:
             break
     else:
         await ctx.respond(f"You don't have permission to do that.", ephemeral=True)
@@ -265,7 +265,7 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Accept", "D
         return
 
     # Stop moderator abuse
-    if ctx.user.id == request.user_id:
+    if ctx.user.id == request.user_id and not DEV_MODE:
         await ctx.respond("You can't end your own vote.", ephemeral=True)
         return
 
