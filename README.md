@@ -15,5 +15,4 @@ Help welcome. Needs doc strings and more type annotations. Some more polish is a
 Feel free to suggest new features on the discord. I might make a branch testing the prediction market integration.
 
 TODO:
-- Paragon/mod veto commands
-- Help command
+- (Suggest additions!)
