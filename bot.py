@@ -21,12 +21,11 @@ class VoteView(discord.ui.View):
         self.thread_title = thread_title
         self.thread_id = thread_id
         self.end_time = end_time
-        self.check_time.start()
-        self.id = None
 
         # Can throw ValueError if the role is invalid
         self.id = app.add_request(self.thread_owner.id, self.thread_id, self.thread_title, self.end_time)
 
+        self.check_time.start()
 
     @discord.ui.button(label="Yes", style=discord.ButtonStyle.success, custom_id="vote_yes")
     async def yes_button_callback(self, button, interaction):
@@ -183,6 +182,7 @@ async def on_thread_create(thread: discord.Thread):
             view = VoteView(thread_owner, thread_id, thread_title, end_time)
         except ValueError as e:
             print(e)
+            view = None
             await thread.send(f"Error: {e}")
             return
 
