@@ -163,7 +163,6 @@ async def on_ready():
         end_time = request.end_time
         bot.add_view(VoteView(thread_owner, thread_id, thread_title, end_time))
 
-
 @bot.event
 async def on_thread_create(thread: discord.Thread):
     # Create an active role request for the first time
@@ -187,9 +186,30 @@ async def on_thread_create(thread: discord.Thread):
 
         app.update_bot_message_id(thread_id, vote_message.id)
 
+# Help command contents
+help_text = """
+
+__Source code:__ <https://github.com/0neye/Role-Request-Voting>
+
+Role Voting helps determine the outcome of an Excelsior role request using an anyonymous voting system.
+
+When a new thread is made in the role requests forum channel, it will send a message with *Yes* and *No* buttons. Select one of these buttons to cast your vote.
+After a set amount of time, the bot will show the results of the poll and automatically assign a role if enough people voted *Yes*.
+
+__Other Commands:__
+/help - displays this text
+More commands are coming soon!
+"""
+
+@bot.command(description="Instructions for using bot, and provides a link to source code")
+async def help(ctx):
+    await ctx.respond(help_text)
+
+# @bot.command(description="end a vote in a given thread early") # Unfinished command to end a vote early
+# async def end_vote_early(ctx):
+#         await ctx.respond(f"Vote ended by "+ctx.user.display_name)
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
-
 
 bot.run(TOKEN)
