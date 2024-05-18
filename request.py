@@ -11,8 +11,11 @@ class RoleRequest:
         self.role: str = None
         self.yes_votes: list = [] # List of usernames, vote #
         self.no_votes: list = [] # List of usernames, vote #
+        # (int, bool) = (user_id, veto); user being the one to make the veto
+        self.veto: None | (int, bool) = None
 
 
+        # Extract role from title
         for role in VALID_ROLES:
             match = re.search(role, self.title, re.IGNORECASE)
             if match:
@@ -20,9 +23,9 @@ class RoleRequest:
                 break
         else:
             raise ValueError("Invalid role.")
+        
 
-        self.id: int = hash(self.user_id + self.end_time)
-        print(f"New Request: {self.id} for {self.role}: '{self.title}'")
+        print(f"New Request: {self.user_id} for {self.role}: '{self.title}'")
 
 
     @classmethod
@@ -37,6 +40,7 @@ class RoleRequest:
         instance.role = data["role"]
         instance.yes_votes = data["yes_votes"]
         instance.no_votes = data["no_votes"]
+        instance.veto = data["veto"]
         return instance
 
     def vote(self, user_id: int, votes: int):
@@ -55,8 +59,11 @@ class RoleRequest:
         return (yes_count, no_count)
 
     def result(self):
-        yes_count, no_count = self.get_votes()
-        return True if (yes_count / (no_count if no_count > 0 else 1)) >= PERCENT_ACCEPT else False
+        if self.veto is None:
+            yes_count, no_count = self.get_votes()
+            return True if (yes_count / (no_count if no_count > 0 else 1)) >= PERCENT_ACCEPT else False
+        else:
+            return self.veto[1]
 
     def to_dict(self):
         return {
@@ -67,5 +74,6 @@ class RoleRequest:
             "bot_message_id": self.bot_message_id,
             "role": self.role,
             "yes_votes": self.yes_votes,
-            "no_votes": self.no_votes
+            "no_votes": self.no_votes,
+            "veto": self.veto
         }

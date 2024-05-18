@@ -13,6 +13,13 @@ ROLE_VOTES = {
     "Paragon": PARAGON_VOTE
 }
 
+# Roles that can veto a request/end it early
+VETOER_ROLES = [
+    "Custodian (admin)",
+    "Sentinel (mod)",
+    "Paragon"
+]
+
 # Roles to be voted on
 VALID_ROLES = [
     "Adept",

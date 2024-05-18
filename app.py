@@ -10,9 +10,9 @@ class RequestsManager:
     def add_request(self, user_id: int, thread_id: int, title: str, end_time: str) -> int:
         # Can throw ValueError if the role is invalid
         request = RoleRequest(user_id, thread_id, title, end_time)
-        self.requests[request.id] = request
+        self.requests[request.thread_id] = request
         self.save_state()
-        return request.id
+        return request.thread_id
     
     def update_bot_message_id(self, thread_id: int, bot_message_id: int):
         for request in self.requests.values():
