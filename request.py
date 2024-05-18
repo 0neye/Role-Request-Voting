@@ -18,7 +18,8 @@ class RoleRequest:
             if match:
                 self.role = role
                 break
-
+        else:
+            raise ValueError("Invalid role.")
 
         self.id: int = hash(self.user_id + self.end_time)
         print(f"New Request: {self.id} for {self.role}: '{self.title}'")

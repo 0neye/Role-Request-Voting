@@ -5,7 +5,7 @@ import dotenv
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime
-from config import VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID
+from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID
 from app import RequestsManager
 from request import RoleRequest
 
@@ -21,8 +21,11 @@ class VoteView(discord.ui.View):
         self.thread_title = thread_title
         self.thread_id = thread_id
         self.end_time = end_time
-        self.check_time.start()
+
+        # Can throw ValueError if the role is invalid
         self.id = app.add_request(self.thread_owner.id, self.thread_id, self.thread_title, self.end_time)
+
+        self.check_time.start()
 
     @discord.ui.button(label="Yes", style=discord.ButtonStyle.success, custom_id="vote_yes")
     async def yes_button_callback(self, button, interaction):
@@ -36,6 +39,7 @@ class VoteView(discord.ui.View):
         user: discord.User = interaction.user
         role_votes = self.get_user_votes(user)
         try:
+            # Negate are 'no' votes, positive are 'yes'
             app.vote_on_request(self.id, user.id, role_votes * (-1 if vote_type == "no" else 1))
         except ValueError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
@@ -46,7 +50,7 @@ class VoteView(discord.ui.View):
         for role in user.roles:
             if role.name in ROLE_VOTES:
                 return ROLE_VOTES[role.name]
-        return 1
+        return EXCELSIOR_VOTE
 
     @tasks.loop(seconds=10)
     async def check_time(self):
@@ -173,7 +177,14 @@ async def on_thread_create(thread: discord.Thread):
         thread_id = thread.id
         end_time = datetime.utcnow().timestamp() + VOTE_TIME_PERIOD
 
-        view = VoteView(thread_owner, thread_id, thread_title, end_time)
+        try:
+            view = VoteView(thread_owner, thread_id, thread_title, end_time)
+        except ValueError as e:
+            print(e)
+            view = None
+            await thread.send(f"Error: {e}")
+            return
+
         request = app.get_request(view.id)
 
         embed = discord.Embed(

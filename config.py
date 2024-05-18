@@ -15,7 +15,6 @@ ROLE_VOTES = {
 
 # Roles to be voted on
 VALID_ROLES = [
-    "Excelsior",
     "Adept",
     "Expert",
     "Paragon",
