@@ -5,7 +5,7 @@ import dotenv
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime
-from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID, VETOER_ROLES, DEV_MODE
+from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID, VETOER_ROLES, DEV_MODE, THREAD_TAGS
 from app import RequestsManager
 from request import RoleRequest
 
@@ -70,7 +70,7 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
     try:
         vote_message = await thread.fetch_message(request.bot_message_id)
         yes_votes, no_votes = request.get_votes()
-        outcome = "Accepted" if request.result() is True else "Denied"
+        outcome = "Approved" if request.result() is True else "Denied"
 
         total_votes = yes_votes + no_votes
         yes_percentage = (yes_votes / total_votes) * 100 if total_votes > 0 else 0
@@ -87,7 +87,7 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             vote_bar = f"```ansi\n{GREEN}{'|' * yes_bars}{RESET}{RED}{'|' * no_bars}{RESET}```"
 
         embed = Embed(title=f"Voting Results - {request.role} - **{outcome}**", 
-                      colour=Colour.green() if outcome == "Accepted" else Colour.red())
+                      colour=Colour.green() if outcome == "Approved" else Colour.red())
         embed.add_field(name="Yes Votes", value=f"{yes_votes} ({yes_percentage:.2f}%)", inline=True)
         embed.add_field(name="No Votes", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True)
         embed.add_field(name="", value=vote_bar, inline=False)
@@ -98,6 +98,19 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             embed.add_field(name="", value=f"*This request's outcome was overruled by {user.mention}*", inline=False)
 
         await vote_message.edit(content=None, embed=embed, view=None)
+
+
+        # Add the tag "Approved" or "Denied" to the thread, then close it.
+        approved_tag = discord.utils.get(thread.parent.available_tags, name=THREAD_TAGS["Approved"])
+        denied_tag = discord.utils.get(thread.parent.available_tags, name=THREAD_TAGS["Denied"])
+
+        if outcome == "Approved" and approved_tag:
+            await thread.add_tags(approved_tag)
+        elif outcome == "Denied" and denied_tag:
+            await thread.add_tags(denied_tag)
+
+        await thread.edit(archived=True, locked=True)
+
 
     except discord.NotFound:
         print("Vote message not found.")
@@ -239,7 +252,7 @@ async def help(ctx):
     await ctx.respond(help_text)
 
 @bot.command(description="End the vote in this thread early. Requires moderator or Paragon roles.", )
-async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Accept", "Deny"])):
+async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "Deny"])):
 
     # Make sure they have the perms
     for role in ctx.user.roles:
@@ -277,9 +290,9 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Accept", "D
         await ctx.respond("This thread is not currently being voted on.", ephemeral=True)
         return
 
-    res = True if outcome == "Accept" else False
+    res = True if outcome == "Approve" else False
     request.veto = (ctx.user.id, res)
-    end_vote(view)
+    await end_vote(view)
 
     await ctx.respond(f"Vote ended by {ctx.user.mention} with outcome: {outcome}")
 

@@ -2,27 +2,28 @@ from config import PERCENT_ACCEPT, VALID_ROLES
 import re
 
 class RoleRequest:
-    def __init__(self, user_id: int, thread_id: int, title: str, end_time: int):
+    def __init__(self, user_id: int, thread_id: int, title: str, end_time: int, role: str = None):
         self.user_id: int = user_id # user ID
         self.thread_id = thread_id
         self.title: str = title
         self.end_time: str = end_time
         self.bot_message_id = None
-        self.role: str = None
+        self.role = role
         self.yes_votes: list = [] # List of usernames, vote #
         self.no_votes: list = [] # List of usernames, vote #
         # (int, bool) = (user_id, veto); user being the one to make the veto
         self.veto: None | (int, bool) = None
 
 
-        # Extract role from title
-        for role in VALID_ROLES:
-            match = re.search(role, self.title, re.IGNORECASE)
-            if match:
-                self.role = role
-                break
-        else:
-            raise ValueError("Invalid role.")
+        # Extract role from title if not provided
+        if not self.role:
+            for role in VALID_ROLES:
+                match = re.search(role, self.title, re.IGNORECASE)
+                if match:
+                    self.role = role
+                    break
+            else:
+                raise ValueError("Invalid role.")
         
 
         print(f"New Request: {self.user_id} for {self.role}: '{self.title}'")
