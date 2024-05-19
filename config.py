@@ -1,4 +1,4 @@
-VOTE_TIME_PERIOD = 10 # * 60 * 60 * 24 * 7  # 7 days
+VOTE_TIME_PERIOD = 60 # * 60 * 60 * 24 * 7  # 7 days
 EXCELSIOR_VOTE = 1
 ADEPT_VOTE = 2
 EXPERT_VOTE = 3

@@ -135,14 +135,14 @@ async def end_vote(self: VoteView):
         print(thread.name, guild.name, role)
 
         if not role:
-            await thread.send(f"Error: Role {role.name} not found in the server.")
+            await thread.send(f"Error: Role '{request.role}' not found in the server.")
 
         # Get the member from the user (yes it's confusing)
         member = guild.get_member(self.thread_owner.id) or await guild.fetch_member(self.thread_owner.id)
         print(member)
 
         if not member:
-            await thread.send(f"Error: Member {self.thread_owner.mention} not found in the server.")
+            await thread.send(f"Error: Member '{self.thread_owner.mention}' not found in the server.")
         
         # Add the role to the user if possible
         print("Adding role...")
