@@ -5,7 +5,16 @@ import dotenv
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime
-from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID, VETOER_ROLES, DEV_MODE, THREAD_TAGS, VALID_ROLES
+from config import (
+    DEFAULT_VOTE,
+    VOTE_TIME_PERIOD,
+    ROLE_VOTES,
+    CHANNEL_ID,
+    VETOER_ROLES,
+    DEV_MODE,
+    THREAD_TAGS,
+    VALID_ROLES,
+)
 from app import RequestsManager
 from request import RoleRequest
 
@@ -13,8 +22,25 @@ bot = discord.Bot()
 app = RequestsManager()
 app.load_state()
 
+
 class VoteView(discord.ui.View):
-    def __init__(self, thread_owner: discord.User, thread_id: int, thread_title: str, end_time: int):
+    def __init__(
+        self,
+        thread_owner: discord.User,
+        thread_id: int,
+        thread_title: str,
+        end_time: int,
+    ):
+        """
+        Initialize the VoteView class.
+
+        Args:
+            thread_owner (discord.User): The owner of the thread.
+            thread_id (int): The ID of the thread (also the request ID).
+            thread_title (str): The title of the thread.
+            end_time (int): The end time of the vote as a timestamp.
+        """
+
         # Called every time the bot restarts
         super().__init__(timeout=None)
         self.thread_owner: discord.User = thread_owner
@@ -24,20 +50,34 @@ class VoteView(discord.ui.View):
 
         self.check_time.start()
 
-    @discord.ui.button(label="Yes", style=discord.ButtonStyle.success, custom_id="vote_yes")
+    @discord.ui.button(
+        label="Yes", style=discord.ButtonStyle.success, custom_id="vote_yes"
+    )
     async def yes_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "yes")
 
-    @discord.ui.button(label="No", style=discord.ButtonStyle.danger, custom_id="vote_no")
+    @discord.ui.button(
+        label="No", style=discord.ButtonStyle.danger, custom_id="vote_no"
+    )
     async def no_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "no")
 
-    async def handle_vote(self, interaction, vote_type):
-        user: discord.User = interaction.user
+    async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
+        """
+        Handle a vote interaction.
+
+        Args:
+            interaction (discord.Interaction): The interaction that triggered the vote.
+            vote_type (str): The type of vote ("yes" or "no").
+        """
+
+        user: discord.Member = interaction.user
 
         # People can't vote on their own requests
         if user.id == self.thread_owner.id and not DEV_MODE:
-            await interaction.response.send_message("You can't vote on your own request!", ephemeral=True)
+            await interaction.response.send_message(
+                "You can't vote on your own request!", ephemeral=True
+            )
             return
 
         vote_changed = app.get_request(self.thread_id).has_voted(user.id)
@@ -45,26 +85,61 @@ class VoteView(discord.ui.View):
         role_votes = self.get_user_votes(user)
 
         # Negate are 'no' votes, positive are 'yes'
-        app.vote_on_request(self.thread_id, user.id, role_votes * (-1 if vote_type == "no" else 1))
+        app.vote_on_request(
+            self.thread_id, user.id, role_votes * (-1 if vote_type == "no" else 1)
+        )
         if vote_changed:
-            await interaction.response.send_message(f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.", ephemeral=True)
+            await interaction.response.send_message(
+                f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.",
+                ephemeral=True,
+            )
         else:
-            await interaction.response.send_message(f"You voted {vote_type.capitalize()} with {role_votes} votes.", ephemeral=True)
+            await interaction.response.send_message(
+                f"You voted {vote_type.capitalize()} with {role_votes} votes.",
+                ephemeral=True,
+            )
 
-    def get_user_votes(self, user):
+    def get_user_votes(self, user: discord.Member):
+        """
+        Get the number of votes a user can cast based on their roles.
+        Dependent on the 'ROLE_VOTES' and 'DEFAULT_VOTE' constants in config.
+
+        Args:
+            user (discord.Member): The user whose votes are being calculated.
+
+        Returns:
+            int: The number of votes the user can cast.
+        """
+
         for role in user.roles:
             if role.name in ROLE_VOTES:
                 return ROLE_VOTES[role.name]
-        return EXCELSIOR_VOTE
+        return DEFAULT_VOTE
 
     @tasks.loop(seconds=10)
     async def check_time(self):
+        """
+        Check if the voting period has ended and end the vote if it has.
+        """
+
         print("checking...")
         if datetime.utcnow().timestamp() >= self.end_time:
             self.check_time.cancel()
             await end_vote(self)
 
+
 async def _finish_vote(thread: discord.Thread, request: RoleRequest):
+    """
+    Finish the voting process and display the results.
+    Edits thread tags and original voting prompt message.
+    Closes and locks thread.
+    Dependent on 'THREAD_TAGS' constant in config.
+
+    Args:
+        thread (discord.Thread): The thread where the vote took place.
+        request (RoleRequest): The role request being voted on.
+    """
+
     # Edit the original bot message to show the vote results and remove the view
     print("Editing vote message to show results...")
     try:
@@ -84,33 +159,47 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             RESET = "\u001b[0m"
             yes_bars = round((yes_votes / total_votes) * 50)
             no_bars = round((no_votes / total_votes) * 50)
-            vote_bar = f"```ansi\n{GREEN}{'|' * yes_bars}{RESET}{RED}{'|' * no_bars}{RESET}```"
+            vote_bar = (
+                f"```ansi\n{GREEN}{'|' * yes_bars}{RESET}{RED}{'|' * no_bars}{RESET}```"
+            )
 
-        embed = Embed(title=f"Voting Results - {request.role} - **{outcome}**", 
-                      colour=Colour.green() if outcome == "Approved" else Colour.red())
-        embed.add_field(name="Yes Votes", value=f"{yes_votes} ({yes_percentage:.2f}%)", inline=True)
-        embed.add_field(name="No Votes", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True)
+        embed = Embed(
+            title=f"Voting Results - {request.role} - **{outcome}**",
+            colour=Colour.green() if outcome == "Approved" else Colour.red(),
+        )
+        embed.add_field(
+            name="Yes Votes", value=f"{yes_votes} ({yes_percentage:.2f}%)", inline=True
+        )
+        embed.add_field(
+            name="No Votes", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True
+        )
         embed.add_field(name="", value=vote_bar, inline=False)
 
         # Add veto disclaimer
         if request.veto is not None:
             user = await bot.get_or_fetch_user(request.veto[0])
-            embed.add_field(name="", value=f"*This request's outcome was overruled by {user.mention}*", inline=False)
+            embed.add_field(
+                name="",
+                value=f"*This request's outcome was overruled by {user.mention}*",
+                inline=False,
+            )
 
         await vote_message.edit(content=None, embed=embed, view=None)
 
-
         # Add the tag "Approved" or "Denied" to the thread, then close it.
-        approved_tag = discord.utils.get(thread.parent.available_tags, name=THREAD_TAGS["Approved"])
-        denied_tag = discord.utils.get(thread.parent.available_tags, name=THREAD_TAGS["Denied"])
+        approved_tag = discord.utils.get(
+            thread.parent.available_tags, name=THREAD_TAGS["Approved"]
+        )
+        denied_tag = discord.utils.get(
+            thread.parent.available_tags, name=THREAD_TAGS["Denied"]
+        )
 
         if outcome == "Approved" and approved_tag:
-            await thread.edit(applied_tags=thread.applied_tags+[approved_tag])
+            await thread.edit(applied_tags=thread.applied_tags + [approved_tag])
         elif outcome == "Denied" and denied_tag:
-            await thread.edit(applied_tags=thread.applied_tags+[denied_tag])
+            await thread.edit(applied_tags=thread.applied_tags + [denied_tag])
 
         await thread.edit(archived=True, locked=True)
-
 
     except discord.NotFound:
         print("Vote message not found.")
@@ -119,21 +208,30 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
 
     print("Voting has ended.")
 
+
 # Can't actually be part of the VoteView class for some reason...
-async def end_vote(self: VoteView):
+async def end_vote(view: VoteView):
+    """
+    End the vote and handle the outcome.
+    Edits user roles and calls _finish_vote().
+
+    Args:
+        view (VoteView): The VoteView instance.
+    """
+
     print("Ending vote...")
-    self.check_time.stop()
-    request: RoleRequest = app.get_request(self.thread_id)
+    view.check_time.stop()
+    request: RoleRequest = app.get_request(view.thread_id)
 
     # Delete the role request from the active list
     print("Deleting record...")
-    app.remove_request(self.thread_id)
+    app.remove_request(view.thread_id)
 
     # Get the current thread
-    thread = bot.get_channel(self.thread_id)
+    thread = bot.get_channel(view.thread_id)
     if not isinstance(thread, discord.Thread):
         print("Error: Thread not found or is not a thread.")
-        return 
+        return
 
     # Do we hand out the role or not?
     give_role = request.result()
@@ -141,10 +239,11 @@ async def end_vote(self: VoteView):
     if request.veto is not None:
         print(f"Request vetoed, result is now {give_role}")
 
-
     try:
         if not give_role:
-            await thread.send(f"Sorry, {self.thread_owner.mention}! Your application for {request.role} has been denied.")
+            await thread.send(
+                f"Sorry, {view.thread_owner.mention}! Your application for {request.role} has been denied."
+            )
             await _finish_vote(thread, request)
             return
 
@@ -159,44 +258,61 @@ async def end_vote(self: VoteView):
             return
 
         # Get the member from the user (yes it's confusing)
-        member = guild.get_member(self.thread_owner.id) or await guild.fetch_member(self.thread_owner.id)
+        member = guild.get_member(view.thread_owner.id) or await guild.fetch_member(
+            view.thread_owner.id
+        )
         print(member)
 
         if not member:
-            await thread.send(f"Error: Member '{self.thread_owner.mention}' not found in the server.")
+            await thread.send(
+                f"Error: Member '{view.thread_owner.mention}' not found in the server."
+            )
             await _finish_vote(thread, request)
             return
-        
+
         # Add the role to the user if possible
         print("Adding role...")
         if member.id == member.guild.owner_id:
             print("Cannot modify roles of the server owner.")
-            await thread.send(f"Error: Cannot modify roles of the server owner, {self.thread_owner.mention}.")
+            await thread.send(
+                f"Error: Cannot modify roles of the server owner, {view.thread_owner.mention}."
+            )
             await _finish_vote(thread, request)
             return
         else:
             await member.add_roles(role)
             print("Role added successfully.")
-            await thread.send(f"Congratulations, {self.thread_owner.mention}! Your application for {request.role} has been approved.")
+            await thread.send(
+                f"Congratulations, {view.thread_owner.mention}! Your application for {request.role} has been approved."
+            )
             await _finish_vote(thread, request)
             return
 
     except discord.Forbidden:
         print("Bot does not have permission to add roles.")
         print("Bot does not have permission to add roles.")
-        await thread.send(f"Error: Bot does not have permission to add roles, {self.thread_owner.mention}.")
+        await thread.send(
+            f"Error: Bot does not have permission to add roles, {view.thread_owner.mention}."
+        )
     except discord.HTTPException as e:
         print(f"Failed to add role: {e}")
-        await thread.send(f"Failed to add role due to an error: {e}, {self.thread_owner.mention}.")
+        await thread.send(
+            f"Failed to add role due to an error: {e}, {view.thread_owner.mention}."
+        )
 
     except asyncio.exceptions.CancelledError:
-          # Weird occurance, but thread.send *almost* always causes this even when it works
-          await _finish_vote(thread, request)
+        # Weird occurance, but thread.send *almost* always causes this even when it works
+        await _finish_vote(thread, request)
 
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    """
+    Event handler for when the bot is ready.
+    Updates the bot object with information loaded from the state file.
+    """
+
+    print(f"Logged in as {bot.user}")
     # Load all active role requests from the saved state on restart
     for request in app.requests.values():
         print(app.requests)
@@ -207,8 +323,18 @@ async def on_ready():
         end_time = request.end_time
         bot.add_view(VoteView(thread_owner, thread_id, thread_title, end_time))
 
+
 @bot.event
 async def on_thread_create(thread: discord.Thread):
+    """
+    Event handler for when a new thread is created.
+    Creates a new RoleRequest and VoteView from the request thread.
+    Dependent on 'VOTE_TIME_PERIOD' and 'VALID_ROLES' constants in config.
+
+    Args:
+        thread (discord.Thread): The newly created thread.
+    """
+
     # Create an active role request for the first time
     if thread.parent_id == CHANNEL_ID:
         thread_title = thread.name
@@ -234,7 +360,9 @@ async def on_thread_create(thread: discord.Thread):
         request = app.get_request(thread_id)
         guild = bot.get_channel(CHANNEL_ID).guild
         owner = await bot.get_or_fetch_user(thread.owner_id)
-        owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(thread.owner_id)
+        owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(
+            thread.owner_id
+        )
 
         # People can't apply for a role they already have
         if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
@@ -248,13 +376,17 @@ async def on_thread_create(thread: discord.Thread):
         embed = discord.Embed(
             title="Role Application",
             description=f"{owner.mention} is applying for {request.role}! Do you think they meet the standards required? Take a look at their ships in-game and then vote below.",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
-        embed.add_field(name="Voting Deadline", value=f"Voting ends <t:{int(end_time)}:F> or <t:{int(end_time)}:R>.")
+        embed.add_field(
+            name="Voting Deadline",
+            value=f"Voting ends <t:{int(end_time)}:F> or <t:{int(end_time)}:R>.",
+        )
 
         vote_message = await thread.send(embed=embed, view=view)
 
         app.update_bot_message_id(thread_id, vote_message.id)
+
 
 # Help command contents
 help_text = """
@@ -267,19 +399,38 @@ When a new thread is made in the role requests forum channel, it will send a mes
 After a set amount of time, the bot will show the results of the poll and automatically assign a role if enough people voted *Yes*.
 """
 
-@bot.command(description="Instructions for using bot, and provides a link to source code")
+
+@bot.command(
+    description="Instructions for using bot, and provides a link to source code"
+)
 async def help(ctx):
+    """
+    Provide help instructions and a link to the source code.
+    """
     await ctx.respond(help_text)
 
-@bot.command(description="End the vote in this thread early. Requires moderator or Paragon roles.", )
-async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "Deny"])):
+
+@bot.command(
+    description="End the vote in this thread early. Requires moderator or Paragon roles.",
+)
+async def end_vote_early(
+    ctx, outcome: discord.Option(str, choices=["Approve", "Deny"])
+):
+    """
+    End the vote in the current thread early.
+    Dependent on 'VETOER_ROLES' constant in config.
+
+    Args:
+        ctx (discord.ApplicationContext): The context of the command.
+        outcome (str): The outcome of the vote ("Approve" or "Deny").
+    """
 
     # Make sure they have the perms
     for role in ctx.user.roles:
         if role.name in VETOER_ROLES or DEV_MODE:
             break
     else:
-        await ctx.respond(f"You don't have permission to do that.", ephemeral=True)
+        await ctx.respond("You don't have permission to do that.", ephemeral=True)
         return
 
     # Get the thread
@@ -290,7 +441,10 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "
 
     # Check if it's a valid thread in the correct forum channel
     if thread.parent_id != CHANNEL_ID:
-        await ctx.respond("This command can only be used in the role requests forum channel.", ephemeral=True)
+        await ctx.respond(
+            "This command can only be used in the role requests forum channel.",
+            ephemeral=True,
+        )
         return
 
     # Get the request
@@ -307,7 +461,9 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "
     # Get the view
     view = next((v for v in bot.persistent_views if v.thread_id == thread.id), None)
     if view is None:
-        await ctx.respond("This thread is not currently being voted on.", ephemeral=True)
+        await ctx.respond(
+            "This thread is not currently being voted on.", ephemeral=True
+        )
         return
 
     await ctx.respond(f"Vote ended by {ctx.user.mention} with outcome: {outcome}")
@@ -315,6 +471,7 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "
     res = True if outcome == "Approve" else False
     request.veto = (ctx.user.id, res)
     await end_vote(view)
+
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")

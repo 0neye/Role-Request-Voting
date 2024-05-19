@@ -1,5 +1,5 @@
 VOTE_TIME_PERIOD = 60 # * 60 * 60 * 24 * 7  # 7 days
-EXCELSIOR_VOTE = 1
+DEFAULT_VOTE = 1
 ADEPT_VOTE = 2
 EXPERT_VOTE = 3
 PARAGON_VOTE = 4
@@ -7,7 +7,7 @@ PERCENT_ACCEPT = 0.9
 
 # Role to vote count mapping
 ROLE_VOTES = {
-    "Excelsior": EXCELSIOR_VOTE,
+    "Excelsior": DEFAULT_VOTE,
     "Adept": ADEPT_VOTE,
     "Expert": EXPERT_VOTE,
     "Paragon": PARAGON_VOTE
