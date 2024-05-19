@@ -145,6 +145,8 @@ async def end_vote(self: VoteView):
     try:
         if not give_role:
             await thread.send(f"Sorry, {self.thread_owner.mention}! Your application for {request.role} has been denied.")
+            await _finish_vote(thread, request)
+            return
 
         # Get guild and role from the discord api
         guild = bot.get_channel(CHANNEL_ID).guild
@@ -153,6 +155,8 @@ async def end_vote(self: VoteView):
 
         if not role:
             await thread.send(f"Error: Role '{request.role}' not found in the server.")
+            await _finish_vote(thread, request)
+            return
 
         # Get the member from the user (yes it's confusing)
         member = guild.get_member(self.thread_owner.id) or await guild.fetch_member(self.thread_owner.id)
@@ -160,6 +164,8 @@ async def end_vote(self: VoteView):
 
         if not member:
             await thread.send(f"Error: Member '{self.thread_owner.mention}' not found in the server.")
+            await _finish_vote(thread, request)
+            return
         
         # Add the role to the user if possible
         print("Adding role...")
@@ -167,10 +173,13 @@ async def end_vote(self: VoteView):
             print("Cannot modify roles of the server owner.")
             await thread.send(f"Error: Cannot modify roles of the server owner, {self.thread_owner.mention}.")
             await _finish_vote(thread, request)
+            return
         else:
             await member.add_roles(role)
             print("Role added successfully.")
             await thread.send(f"Congratulations, {self.thread_owner.mention}! Your application for {request.role} has been approved.")
+            await _finish_vote(thread, request)
+            return
 
     except discord.Forbidden:
         print("Bot does not have permission to add roles.")
@@ -181,7 +190,7 @@ async def end_vote(self: VoteView):
         await thread.send(f"Failed to add role due to an error: {e}, {self.thread_owner.mention}.")
 
     except asyncio.exceptions.CancelledError:
-          # Weird occurance, but thread.send always causes this even when it works
+          # Weird occurance, but thread.send *almost* always causes this even when it works
           await _finish_vote(thread, request)
 
 
@@ -241,6 +250,7 @@ async def on_thread_create(thread: discord.Thread):
             description=f"{owner.mention} is applying for {request.role}! Do you think they meet the standards required? Take a look at their ships in-game and then vote below.",
             color=discord.Color.blue()
         )
+        embed.add_field(name="Voting Deadline", value=f"Voting ends <t:{int(end_time)}:F> or <t:{int(end_time)}:R>.")
 
         vote_message = await thread.send(embed=embed, view=view)
 
@@ -300,11 +310,11 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "
         await ctx.respond("This thread is not currently being voted on.", ephemeral=True)
         return
 
+    await ctx.respond(f"Vote ended by {ctx.user.mention} with outcome: {outcome}")
+
     res = True if outcome == "Approve" else False
     request.veto = (ctx.user.id, res)
     await end_vote(view)
-
-    await ctx.respond(f"Vote ended by {ctx.user.mention} with outcome: {outcome}")
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
