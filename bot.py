@@ -5,7 +5,7 @@ import dotenv
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime
-from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID, VETOER_ROLES, DEV_MODE, THREAD_TAGS
+from config import EXCELSIOR_VOTE, VOTE_TIME_PERIOD, ROLE_VOTES, CHANNEL_ID, VETOER_ROLES, DEV_MODE, THREAD_TAGS, VALID_ROLES
 from app import RequestsManager
 from request import RoleRequest
 
@@ -79,7 +79,7 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         if total_votes == 0:
             vote_bar = "No votes cast."
         else:
-            GREEN = "\u001b[0m"
+            GREEN = "\u001b[32m"
             RED = "\u001b[31m"
             RESET = "\u001b[0m"
             yes_bars = round((yes_votes / total_votes) * 50)
@@ -202,10 +202,17 @@ async def on_thread_create(thread: discord.Thread):
         thread_title = thread.name
         thread_id = thread.id
         end_time = datetime.utcnow().timestamp() + VOTE_TIME_PERIOD
+        role = None
+
+        # Try to extract the role from the thread tags
+        for tag in thread.applied_tags:
+            if tag in VALID_ROLES:
+                role = tag.name
 
         try:
-            # Can throw ValueError if the role is invalid
-            app.add_request(thread.owner_id, thread_id, thread_title, end_time)
+            # Can throw ValueError if the role in the title is invalid
+            # Won't throw if the role was found in the tags
+            app.add_request(thread.owner_id, thread_id, thread_title, end_time, role)
         except ValueError as e:
             print(e)
             await thread.send(f"Error: {e}")
