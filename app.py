@@ -10,24 +10,25 @@ class RequestsManager:
     def add_request(self, user_id: int, thread_id: int, title: str, end_time: str) -> int:
         # Can throw ValueError if the role is invalid
         request = RoleRequest(user_id, thread_id, title, end_time)
+        # Thread ID == Request ID
         self.requests[request.thread_id] = request
         self.save_state()
         return request.thread_id
     
-    def update_bot_message_id(self, thread_id: int, bot_message_id: int):
-        for request in self.requests.values():
-            if request.thread_id == thread_id:
-                request.bot_message_id = bot_message_id
-                break
-    
-    def vote_on_request(self, request_id: int, user_id: int, votes: int):
+    def update_bot_message_id(self, request_id: int, bot_message_id: int):
         try:
-            self.requests[request_id].vote(user_id, votes)
+            self.requests[request_id].bot_message_id = bot_message_id
             self.save_state()
         except KeyError:
             raise ValueError("Invalid request ID.")
-        except ValueError as e:
-            raise ValueError(e)
+    
+    def vote_on_request(self, request_id: int, user_id: int, votes: int):
+        try:
+            # Uses change_vote so this function can do double duty
+            self.requests[request_id].change_vote(user_id, votes)
+            self.save_state()
+        except KeyError:
+            raise ValueError("Invalid request ID.")
     
     def get_request(self, request_id: int) -> RoleRequest:
         try:

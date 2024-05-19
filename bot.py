@@ -40,14 +40,16 @@ class VoteView(discord.ui.View):
             await interaction.response.send_message("You can't vote on your own request!", ephemeral=True)
             return
 
-        role_votes = self.get_user_votes(user)
-        try:
-            # Negate are 'no' votes, positive are 'yes'
-            app.vote_on_request(self.thread_id, user.id, role_votes * (-1 if vote_type == "no" else 1))
-        except ValueError as e:
-            await interaction.response.send_message(str(e), ephemeral=True)
+        vote_changed = app.get_request(self.thread_id).has_voted(user.id)
 
-        await interaction.response.send_message(f"You voted {vote_type.capitalize()} with {role_votes} votes.", ephemeral=True)
+        role_votes = self.get_user_votes(user)
+
+        # Negate are 'no' votes, positive are 'yes'
+        app.vote_on_request(self.thread_id, user.id, role_votes * (-1 if vote_type == "no" else 1))
+        if vote_changed:
+            await interaction.response.send_message(f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"You voted {vote_type.capitalize()} with {role_votes} votes.", ephemeral=True)
 
     def get_user_votes(self, user):
         for role in user.roles:

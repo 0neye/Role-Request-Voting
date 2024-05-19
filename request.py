@@ -44,9 +44,6 @@ class RoleRequest:
         return instance
 
     def vote(self, user_id: int, votes: int):
-        if user_id in [vote[0] for vote in self.yes_votes + self.no_votes]:
-            raise ValueError(f"You have already voted.")
-        
         # Negative are no votes, positive are yes votes
         if votes < 0:
             self.no_votes.append((user_id, votes*-1))
@@ -57,6 +54,15 @@ class RoleRequest:
         yes_count = sum(vote[1] for vote in self.yes_votes)
         no_count = sum(vote[1] for vote in self.no_votes)
         return (yes_count, no_count)
+
+    def has_voted(self, user_id: int):
+        return user_id in [vote[0] for vote in self.yes_votes + self.no_votes]
+
+    def change_vote(self, user_id: int, new_votes: int):
+        if self.has_voted(user_id):
+            self.yes_votes = [vote for vote in self.yes_votes if vote[0] != user_id]
+            self.no_votes = [vote for vote in self.no_votes if vote[0] != user_id]
+        self.vote(user_id, new_votes)
 
     def result(self):
         if self.veto is None:
