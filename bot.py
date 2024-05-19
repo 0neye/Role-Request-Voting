@@ -105,9 +105,9 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         denied_tag = discord.utils.get(thread.parent.available_tags, name=THREAD_TAGS["Denied"])
 
         if outcome == "Approved" and approved_tag:
-            await thread.add_tags(approved_tag)
+            await thread.edit(applied_tags=thread.applied_tags+[approved_tag])
         elif outcome == "Denied" and denied_tag:
-            await thread.add_tags(denied_tag)
+            await thread.edit(applied_tags=thread.applied_tags+[denied_tag])
 
         await thread.edit(archived=True, locked=True)
 
@@ -123,6 +123,11 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
 async def end_vote(self: VoteView):
     print("Ending vote...")
     self.check_time.stop()
+    request: RoleRequest = app.get_request(self.thread_id)
+
+    # Delete the role request from the active list
+    print("Deleting record...")
+    app.remove_request(self.thread_id)
 
     # Get the current thread
     thread = bot.get_channel(self.thread_id)
@@ -131,15 +136,12 @@ async def end_vote(self: VoteView):
         return 
 
     # Do we hand out the role or not?
-    request: RoleRequest = app.get_request(self.thread_id)
     give_role = request.result()
     print(f"Result: {give_role} - {request.get_votes()}")
     if request.veto is not None:
         print(f"Request vetoed, result is now {give_role}")
 
-    # Delete the role request from the active list either way
-    print("Deleting record...")
-    app.remove_request(self.thread_id)
+
     try:
         if not give_role:
             await thread.send(f"Sorry, {self.thread_owner.mention}! Your application for {request.role} has been denied.")
@@ -164,6 +166,7 @@ async def end_vote(self: VoteView):
         if member.id == member.guild.owner_id:
             print("Cannot modify roles of the server owner.")
             await thread.send(f"Error: Cannot modify roles of the server owner, {self.thread_owner.mention}.")
+            await _finish_vote(thread, request)
         else:
             await member.add_roles(role)
             print("Role added successfully.")
