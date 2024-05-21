@@ -111,10 +111,12 @@ class VoteView(discord.ui.View):
             int: The number of votes the user can cast.
         """
 
+        res = DEFAULT_VOTE
         for role in user.roles:
             if role.name in ROLE_VOTES:
-                return ROLE_VOTES[role.name]
-        return DEFAULT_VOTE
+                res = max(res, ROLE_VOTES[role.name])
+
+        return res
 
     @tasks.loop(seconds=10)
     async def check_time(self):
