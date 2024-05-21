@@ -1,9 +1,11 @@
-VOTE_TIME_PERIOD = 60 # * 60 * 60 * 24 * 7  # 7 days
+VOTE_TIME_PERIOD = 60 # * 60 * 60 * 24 * 7  # 7 days in seconds
 DEFAULT_VOTE = 1
 ADEPT_VOTE = 2
 EXPERT_VOTE = 3
 PARAGON_VOTE = 4
+
 PERCENT_ACCEPT = 0.9
+CHECK_TIME = 60 # in seconds
 
 # Role to vote count mapping
 ROLE_VOTES = {

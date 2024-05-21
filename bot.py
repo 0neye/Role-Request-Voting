@@ -6,6 +6,7 @@ from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime
 from config import (
+    CHECK_TIME,
     DEFAULT_VOTE,
     VOTE_TIME_PERIOD,
     ROLE_VOTES,
@@ -118,7 +119,7 @@ class VoteView(discord.ui.View):
 
         return res
 
-    @tasks.loop(seconds=10)
+    @tasks.loop(seconds=CHECK_TIME)
     async def check_time(self):
         """
         Check if the voting period has ended and end the vote if it has.
