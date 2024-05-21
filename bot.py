@@ -374,12 +374,12 @@ async def on_thread_create(thread: discord.Thread):
         view = VoteView(owner, thread_id, thread_title, end_time)
 
         embed = discord.Embed(
-            title="Role Application",
+            title=f"Role Application - {request.role}",
             description=f"{owner.mention} is applying for {request.role}! Do you think they meet the standards required? Take a look at their ships in-game and then vote below.",
             color=discord.Color.blue(),
         )
         embed.add_field(
-            name="Voting Deadline",
+            name="Deadline",
             value=f"Voting ends <t:{int(end_time)}:F> or <t:{int(end_time)}:R>.",
         )
 
