@@ -31,12 +31,10 @@ THREAD_TAGS = {
 }
 
 
-
-
 PERCENT_ACCEPT = 0.9 # % required to approve a request
 VOTE_TIME_PERIOD = 60 # * 60 * 60 * 24 * 7  # 7 days in seconds
-CHECK_TIME = 60 # how often you want to check if the voting period has ended; in seconds
+CHECK_TIME = 50 # how often you want to check if the voting period has ended; in seconds
 
-CHANNEL_ID = 1240462346808463362  # Forum channel ID
+CHANNEL_ID = 0  # Forum channel ID
 STATE_FILE_NAME = 'requests_state.json'
-DEV_MODE = True # for ease of testing, turns off many checks
+DEV_MODE = False # for ease of testing, turns off many checks
