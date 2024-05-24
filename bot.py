@@ -11,7 +11,7 @@ from config import (
     VOTE_TIME_PERIOD,
     ROLE_VOTES,
     CHANNEL_ID,
-    VETOER_ROLES,
+    COMMAND_WHITELISTED_ROLES,
     DEV_MODE,
     THREAD_TAGS,
     VALID_ROLES,
@@ -327,110 +327,95 @@ async def on_ready():
         bot.add_view(VoteView(thread_owner, thread_id, thread_title, end_time))
 
 
+async def _init_request(thread: discord.Thread):
+    """
+    Creates a new RoleRequest and VoteView from the request thread.
+    Dependent on 'VOTE_TIME_PERIOD' and 'VALID_ROLES' constants in config.
+
+    Args:
+        thread (discord.Thread): The request thread.
+    """
+
+    # Create an active role request for the first time
+    thread_title = thread.name
+    thread_id = thread.id
+    end_time = datetime.utcnow().timestamp() + VOTE_TIME_PERIOD
+    role = None
+
+    # Try to extract the role from the thread tags
+    for tag in thread.applied_tags:
+        if tag in VALID_ROLES:
+            role = tag.name
+
+    try:
+        # Can throw ValueError if the role in the title is invalid
+        # Won't throw if the role was found in the tags
+        app.add_request(thread.owner_id, thread_id, thread_title, end_time, role)
+    except ValueError as e:
+        print(e)
+        await thread.send(f"Error: {e}")
+        return
+
+    # Bunch of work needed to check roles below
+    request = app.get_request(thread_id)
+    guild = bot.get_channel(CHANNEL_ID).guild
+    owner = await bot.get_or_fetch_user(thread.owner_id)
+    owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(
+        thread.owner_id
+    )
+
+    # People can't apply for a role they already have
+    if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
+        await thread.send(f"Error: You already have the role {request.role}.")
+        app.remove_request(thread_id)
+        return
+
+    # Finally construct the view
+    view = VoteView(owner, thread_id, thread_title, end_time)
+
+    embed = discord.Embed(
+        title=f"Role Application - {request.role}",
+        description=f"{owner.mention} is applying for {request.role}! Do you think they meet the standards required? Take a look at their ships in-game and then vote below.",
+        color=discord.Color.blue(),
+    )
+    embed.add_field(
+        name="Deadline",
+        value=f"Voting ends <t:{int(end_time)}:F> or <t:{int(end_time)}:R>.",
+    )
+
+    vote_message = await thread.send(embed=embed, view=view)
+    await vote_message.pin()
+
+    app.update_bot_message_id(thread_id, vote_message.id)
+
 @bot.event
 async def on_thread_create(thread: discord.Thread):
     """
     Event handler for when a new thread is created.
-    Creates a new RoleRequest and VoteView from the request thread.
-    Dependent on 'VOTE_TIME_PERIOD' and 'VALID_ROLES' constants in config.
+    Calls _init_request() if the thread is in the role requests channel.
 
     Args:
         thread (discord.Thread): The newly created thread.
     """
 
-    # Create an active role request for the first time
     if thread.parent_id == CHANNEL_ID:
-        thread_title = thread.name
-        thread_id = thread.id
-        end_time = datetime.utcnow().timestamp() + VOTE_TIME_PERIOD
-        role = None
-
-        # Try to extract the role from the thread tags
-        for tag in thread.applied_tags:
-            if tag in VALID_ROLES:
-                role = tag.name
-
-        try:
-            # Can throw ValueError if the role in the title is invalid
-            # Won't throw if the role was found in the tags
-            app.add_request(thread.owner_id, thread_id, thread_title, end_time, role)
-        except ValueError as e:
-            print(e)
-            await thread.send(f"Error: {e}")
-            return
-
-        # Bunch of work needed to check roles below
-        request = app.get_request(thread_id)
-        guild = bot.get_channel(CHANNEL_ID).guild
-        owner = await bot.get_or_fetch_user(thread.owner_id)
-        owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(
-            thread.owner_id
-        )
-
-        # People can't apply for a role they already have
-        if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
-            await thread.send(f"Error: You already have the role {request.role}.")
-            app.remove_request(thread_id)
-            return
-
-        # Finally construct the view
-        view = VoteView(owner, thread_id, thread_title, end_time)
-
-        embed = discord.Embed(
-            title=f"Role Application - {request.role}",
-            description=f"{owner.mention} is applying for {request.role}! Do you think they meet the standards required? Take a look at their ships in-game and then vote below.",
-            color=discord.Color.blue(),
-        )
-        embed.add_field(
-            name="Deadline",
-            value=f"Voting ends <t:{int(end_time)}:F> or <t:{int(end_time)}:R>.",
-        )
-
-        vote_message = await thread.send(embed=embed, view=view)
-
-        app.update_bot_message_id(thread_id, vote_message.id)
+        await _init_request(thread)
 
 
-# Help command contents
-help_text = """
-
-__Source code:__ <https://github.com/0neye/Role-Request-Voting>
-
-Role Voting helps determine the outcome of an Excelsior role request using an anyonymous voting system.
-
-When a new thread is made in the role requests forum channel, it will send a message with *Yes* and *No* buttons. Select one of these buttons to cast your vote.
-After a set amount of time, the bot will show the results of the poll and automatically assign a role if enough people voted *Yes*.
-"""
-
-
-@bot.command(
-    description="Instructions for using bot, and provides a link to source code"
-)
-async def help(ctx):
+async def _restricted_cmd_ctx_to_thread(ctx) -> discord.Thread:
     """
-    Provide help instructions and a link to the source code.
-    """
-    await ctx.respond(help_text)
-
-
-@bot.command(
-    description="End the vote in this thread early. Requires moderator or Paragon roles.",
-)
-async def end_vote_early(
-    ctx, outcome: discord.Option(str, choices=["Approve", "Deny"])
-):
-    """
-    End the vote in the current thread early.
-    Dependent on 'VETOER_ROLES' constant in config.
+    Performs basic checks for restricted commands and returns the thread if valid.
 
     Args:
-        ctx (discord.ApplicationContext): The context of the command.
-        outcome (str): The outcome of the vote ("Approve" or "Deny").
+        ctx (discord.ext.commands.Context): The context of the command.
+
+    Returns:
+        discord.Thread | None
     """
 
     # Make sure they have the perms
     for role in ctx.user.roles:
-        if role.name in VETOER_ROLES or DEV_MODE:
+        if role.name in COMMAND_WHITELISTED_ROLES or DEV_MODE:
             break
     else:
         await ctx.respond("You don't have permission to do that.", ephemeral=True)
@@ -448,6 +433,47 @@ async def end_vote_early(
             "This command can only be used in the role requests forum channel.",
             ephemeral=True,
         )
+        return
+    
+    return thread
+
+@bot.command(
+    description="Manually create a vote in this thread. Requires moderator or Paragon roles."
+)
+async def create_vote(ctx):
+    """
+    Manually creates a vote in the current thread.
+    Dependent on 'COMMAND_WHITELISTED_ROLES' constant in config.
+
+    Args:
+        ctx (discord.ext.commands.Context): The context of the command.
+    """
+
+    # Get the thread
+    thread = await _restricted_cmd_ctx_to_thread(ctx)
+    if thread is None:
+        return
+    
+    await _init_request(thread)
+
+@bot.command(
+    description="End the vote in this thread early. Requires moderator or Paragon roles.",
+)
+async def end_vote_early(
+    ctx, outcome: discord.Option(str, choices=["Approve", "Deny"])
+):
+    """
+    End the vote in the current thread early.
+    Dependent on 'COMMAND_WHITELISTED_ROLES' constant in config.
+
+    Args:
+        ctx (discord.ApplicationContext): The context of the command.
+        outcome (str): The outcome of the vote ("Approve" or "Deny").
+    """
+
+    # Get the thread
+    thread = await _restricted_cmd_ctx_to_thread(ctx)
+    if thread is None:
         return
 
     # Get the request
@@ -474,6 +500,27 @@ async def end_vote_early(
     res = True if outcome == "Approve" else False
     request.veto = (ctx.user.id, res)
     await end_vote(view)
+
+
+# Help command contents
+help_text = """
+
+__Source code:__ <https://github.com/0neye/Role-Request-Voting>
+
+Role Voting helps determine the outcome of an Excelsior role request using an anyonymous voting system.
+
+When a new thread is made in the role requests forum channel, it will send a message with *Yes* and *No* buttons. Select one of these buttons to cast your vote.
+After a set amount of time, the bot will show the results of the poll and automatically assign a role if enough people voted *Yes*.
+"""
+
+@bot.command(
+    description="Instructions for using bot, and provides a link to source code"
+)
+async def help(ctx):
+    """
+    Provide help instructions and a link to the source code.
+    """
+    await ctx.respond(help_text)
 
 
 dotenv.load_dotenv()
