@@ -58,9 +58,9 @@ class RoleRequest:
             thread_id=data["thread_id"],
             title=data["title"],
             end_time=data["end_time"],
+            role = data["role"]
         )
         instance.bot_message_id = data["bot_message_id"]
-        instance.role = data["role"]
         instance.yes_votes = data["yes_votes"]
         instance.no_votes = data["no_votes"]
         instance.veto = data["veto"]
