@@ -344,7 +344,7 @@ async def _init_request(thread: discord.Thread):
 
     # Try to extract the role from the thread tags
     for tag in thread.applied_tags:
-        if tag in VALID_ROLES:
+        if tag.name in VALID_ROLES:
             role = tag.name
 
     try:
