@@ -388,6 +388,7 @@ async def _init_request(thread: discord.Thread):
 
     app.update_bot_message_id(thread_id, vote_message.id)
 
+
 @bot.event
 async def on_thread_create(thread: discord.Thread):
     """
@@ -434,8 +435,9 @@ async def _restricted_cmd_ctx_to_thread(ctx) -> discord.Thread:
             ephemeral=True,
         )
         return
-    
+
     return thread
+
 
 @bot.command(
     description="Manually create a vote in this thread. Requires moderator or Paragon roles."
@@ -453,8 +455,11 @@ async def create_vote(ctx):
     thread = await _restricted_cmd_ctx_to_thread(ctx)
     if thread is None:
         return
-    
+
     await _init_request(thread)
+
+    await ctx.respond("Vote created.", ephemeral=True)
+
 
 @bot.command(
     description="End the vote in this thread early. Requires moderator or Paragon roles.",
@@ -512,6 +517,7 @@ Role Voting helps determine the outcome of an Excelsior role request using an an
 When a new thread is made in the role requests forum channel, it will send a message with *Yes* and *No* buttons. Select one of these buttons to cast your vote.
 After a set amount of time, the bot will show the results of the poll and automatically assign a role if enough people voted *Yes*.
 """
+
 
 @bot.command(
     description="Instructions for using bot, and provides a link to source code"
