@@ -4,7 +4,7 @@ import os
 import dotenv
 from discord.ext import tasks
 from discord import Embed, Colour
-from datetime import datetime
+from datetime import datetime, timezone
 from config import (
     CHECK_TIME,
     DEFAULT_VOTE,
@@ -126,7 +126,7 @@ class VoteView(discord.ui.View):
         """
 
         print("checking...")
-        if datetime.utcnow().timestamp() >= self.end_time:
+        if int(datetime.now(timezone.utc).timestamp()) >= self.end_time:
             self.check_time.cancel()
             await end_vote(self)
 
@@ -339,7 +339,7 @@ async def _init_request(thread: discord.Thread):
     # Create an active role request for the first time
     thread_title = thread.name
     thread_id = thread.id
-    end_time = datetime.utcnow().timestamp() + VOTE_TIME_PERIOD
+    end_time = int(datetime.now(timezone.utc).timestamp() + VOTE_TIME_PERIOD)
     role = None
 
     # Try to extract the role from the thread tags
@@ -380,7 +380,7 @@ async def _init_request(thread: discord.Thread):
     )
     embed.add_field(
         name="Deadline",
-        value=f"Voting ends <t:{int(end_time)}:F> or <t:{int(end_time)}:R>.",
+        value=f"Voting ends <t:{end_time}:F> or <t:{end_time}:R>.",
     )
 
     vote_message = await thread.send(embed=embed, view=view)
