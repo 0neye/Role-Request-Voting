@@ -126,7 +126,7 @@ class VoteView(discord.ui.View):
         """
 
         print("checking...")
-        if datetime.utcnow().timestamp() >= self.end_time:
+        if int(datetime.now(timezone.utc).timestamp()) >= self.end_time:
             self.check_time.cancel()
             await end_vote(self)
 
