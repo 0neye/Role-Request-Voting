@@ -382,6 +382,10 @@ async def _init_request(thread: discord.Thread):
         name="Deadline",
         value=f"Voting ends <t:{end_time}:F> or <t:{end_time}:R>.",
     )
+    embed.add_field(
+        name="Number of members who voted:",
+        value=f"{request.num_users} members"
+    )
 
     vote_message = await thread.send(embed=embed, view=view)
     await vote_message.pin()

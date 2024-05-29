@@ -1,7 +1,6 @@
 from config import PERCENT_ACCEPT, VALID_ROLES
 import re
 
-
 class RoleRequest:
     def __init__(
         self, user_id: int, thread_id: int, title: str, end_time: int, role: str = None
@@ -26,6 +25,7 @@ class RoleRequest:
         self.role = role
         self.yes_votes: list = []  # List of usernames, vote #
         self.no_votes: list = []  # List of usernames, vote #
+        self.num_users: int = 0 # Number of users that cast a vote
         # (int, bool) = (user_id, veto); user being the one to make the veto
         self.veto: None | (int, bool) = None
 
@@ -67,6 +67,7 @@ class RoleRequest:
         return instance
 
     def vote(self, user_id: int, votes: int):
+        from app import RequestsManager # Throws an error if put at the beginning of code
         """
         Vote on the role request.
 
@@ -74,13 +75,16 @@ class RoleRequest:
             user_id (int): The ID of the user voting.
             votes (int): The number of votes. Negative are "no" votes.
         """
+        vote_changed = RequestsManager().get_request(self.thread_id).has_voted(self.user_id) # TODO: figure out what is wrong with this
+        if not vote_changed: # Increase the user count by 1 if the user is one that hasn't voted before
+            self.num_users += 1
+        print(f"Total member count: {self.num_users}")
 
         # Negative are no votes, positive are yes votes
         if votes < 0:
             self.no_votes.append((user_id, votes * -1))
         else:
             self.yes_votes.append((user_id, votes))
-
     def get_votes(self):
         """
         Get the total number of yes and no votes.
@@ -103,7 +107,6 @@ class RoleRequest:
         Returns:
             bool: True if the user has voted, False otherwise.
         """
-
         return user_id in [vote[0] for vote in self.yes_votes + self.no_votes]
 
     def change_vote(self, user_id: int, new_votes: int):
@@ -156,5 +159,6 @@ class RoleRequest:
             "role": self.role,
             "yes_votes": self.yes_votes,
             "no_votes": self.no_votes,
+            "num_users": self.num_users,
             "veto": self.veto,
         }
