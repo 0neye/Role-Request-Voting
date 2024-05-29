@@ -522,6 +522,11 @@ async def help(ctx):
     """
     await ctx.respond(help_text)
 
+@bot.command(description="Returns the latency of the bot in ms")
+async def ping(ctx):
+    latency = bot.latency
+    latency_ms = latency * 1000
+    await ctx.respond(f"`Ping: {latency_ms:.2f}ms`")
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
