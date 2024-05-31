@@ -3,7 +3,7 @@ import re
 
 class RoleRequest:
     def __init__(
-        self, user_id: int, thread_id: int, title: str, end_time: int, role: str = None
+        self, user_id: int, thread_id: int, title: str, end_time: int, role: str = None,
     ):
         """
         Initialize a RoleRequest instance. Extracts role from title if not given.
@@ -15,6 +15,7 @@ class RoleRequest:
             title (str): The title of the request (should contain the role if 'role' is None).
             end_time (int): The end time of the request as a timestamp.
             role (str, optional): The role being requested. Defaults to None.
+            num_users: The number of users that cast a vote in that thread.
         """
 
         self.user_id: int = user_id  # user ID
@@ -58,16 +59,17 @@ class RoleRequest:
             thread_id=data["thread_id"],
             title=data["title"],
             end_time=data["end_time"],
-            role = data["role"]
+            role = data["role"],
+            # num_users = data["num_users"],
         )
         instance.bot_message_id = data["bot_message_id"]
         instance.yes_votes = data["yes_votes"]
         instance.no_votes = data["no_votes"]
+        # instance.num_users = data["num_users"]
         instance.veto = data["veto"]
         return instance
 
     def vote(self, user_id: int, votes: int):
-        from app import RequestsManager # Throws an error if put at the beginning of code
         """
         Vote on the role request.
 
@@ -75,16 +77,18 @@ class RoleRequest:
             user_id (int): The ID of the user voting.
             votes (int): The number of votes. Negative are "no" votes.
         """
-        vote_changed = RequestsManager().get_request(self.thread_id).has_voted(self.user_id) # TODO: figure out what is wrong with this
-        if not vote_changed: # Increase the user count by 1 if the user is one that hasn't voted before
-            self.num_users += 1
-        print(f"Total member count: {self.num_users}")
 
         # Negative are no votes, positive are yes votes
         if votes < 0:
             self.no_votes.append((user_id, votes * -1))
         else:
             self.yes_votes.append((user_id, votes))
+        
+        self.update_usercount() #Update the user count
+        # print(f"Yes list: {self.yes_votes}")
+        # print(f"No list: {self.no_votes}")
+        # print(f"Updated member count: {self.num_users}\n")
+
     def get_votes(self):
         """
         Get the total number of yes and no votes.
@@ -96,6 +100,10 @@ class RoleRequest:
         yes_count = sum(vote[1] for vote in self.yes_votes)
         no_count = sum(vote[1] for vote in self.no_votes)
         return (yes_count, no_count)
+    
+    def update_usercount(self):
+        self.num_users = len(self.yes_votes) + len(self.no_votes)
+        return
 
     def has_voted(self, user_id: int):
         """

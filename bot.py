@@ -56,12 +56,14 @@ class VoteView(discord.ui.View):
     )
     async def yes_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "yes")
+        await update_displayed_member_count()
 
     @discord.ui.button(
         label="No", style=discord.ButtonStyle.danger, custom_id="vote_no"
     )
     async def no_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "no")
+        await update_displayed_member_count()
 
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         """
@@ -176,7 +178,10 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         embed.add_field(
             name="No Votes", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True
         )
-        embed.add_field(name="", value=vote_bar, inline=False)
+        embed.add_field(
+            name="", value=vote_bar, inline=False
+        )
+        embed.add_field(name=f"Total number of participating member(s): {request.num_users}", value="", inline=False)
 
         # Add veto disclaimer
         if request.veto is not None:
@@ -384,13 +389,37 @@ async def _init_request(thread: discord.Thread):
     )
     embed.add_field(
         name="Number of members who voted:",
-        value=f"{request.num_users} members"
+        value=f"{request.num_users} member(s)"
     )
-
     vote_message = await thread.send(embed=embed, view=view)
     await vote_message.pin()
 
     app.update_bot_message_id(thread_id, vote_message.id)
+
+async def update_displayed_member_count(): # Called whenever the displayed member count needs to update
+    for request in app.requests.values():
+        thread_id = request.thread_id
+        thread = bot.get_channel(thread_id)
+        if not isinstance(thread, discord.Thread):
+            print(f"Error: Thread with ID {thread_id} not found or is not a thread.")
+            continue
+
+        vote_message_id = request.bot_message_id
+        try:
+            vote_message = await thread.fetch_message(vote_message_id)
+        except discord.NotFound:
+            print(f"Error: Vote message with ID {vote_message_id} not found in thread {thread_id}.")
+            continue
+
+        yes_votes, no_votes = request.get_votes()
+        total_votes = yes_votes + no_votes
+        embed = vote_message.embeds[0] #Edit the member count on the embed
+        embed.set_field_at(
+            index=1,
+            name="Number of members who voted:",
+            value=f"{total_votes} member(s)"
+        )
+        await vote_message.edit(embed=embed)
 
 @bot.event
 async def on_thread_create(thread: discord.Thread):
