@@ -2,6 +2,7 @@ import asyncio
 import discord
 import os
 import dotenv
+import logging
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime, timezone
@@ -15,13 +16,39 @@ from config import (
     DEV_MODE,
     THREAD_TAGS,
     VALID_ROLES,
+    LOG_FILE_NAME,
 )
 from app import RequestsManager
 from request import RoleRequest
 
+
+# SETUP AND INITIALIZATION
+
 bot = discord.Bot()
 app = RequestsManager()
 app.load_state()
+
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+file_handler = logging.FileHandler(LOG_FILE_NAME)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+
+####################################
 
 
 class VoteView(discord.ui.View):
@@ -144,7 +171,7 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
     """
 
     # Edit the original bot message to show the vote results and remove the view
-    print("Editing vote message to show results...")
+    logger.info("Editing vote message to show results...")
     try:
         vote_message = await thread.fetch_message(request.bot_message_id)
         yes_votes, no_votes = request.get_votes()
@@ -204,12 +231,16 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
 
         await thread.edit(archived=True, locked=True)
 
-    except discord.NotFound:
-        print("Vote message not found.")
-    except discord.HTTPException as e:
-        print(f"Failed to edit vote message: {e}")
+        # Log the result
+        logger.info(
+            f"Vote finished for request '{request.thread_id}' - {request.role}: {outcome}. "
+            f"Yes: {yes_votes} ({yes_percentage:.2f}%), No: {no_votes} ({no_percentage:.2f}%)\n{'==' * 10}\n\n"
+        )
 
-    print("Voting has ended.")
+    except discord.NotFound:
+        logger.error(f"Vote message not found for request {request.thread_id}.")
+    except discord.HTTPException as e:
+        logger.error(f"Failed to edit vote message: {e}")
 
 
 # Can't actually be part of the VoteView class for some reason...
@@ -222,25 +253,23 @@ async def end_vote(view: VoteView):
         view (VoteView): The VoteView instance.
     """
 
-    print("Ending vote...")
+    logger.info(f"# Ending vote with thread id '{view.thread_id}'\n")
     view.check_time.stop()
     request: RoleRequest = app.get_request(view.thread_id)
 
     # Delete the role request from the active list
-    print("Deleting record...")
     app.remove_request(view.thread_id)
 
     # Get the current thread
     thread = bot.get_channel(view.thread_id)
     if not isinstance(thread, discord.Thread):
-        print("Error: Thread not found or is not a thread.")
+        logger.error("Error: Thread not found or is not a thread.")
         return
 
     # Do we hand out the role or not?
     give_role = request.result()
-    print(f"Result: {give_role} - {request.get_votes()}")
     if request.veto is not None:
-        print(f"Request vetoed, result is now {give_role}")
+        logger.info(f"Request vetoed, result is now {give_role}")
 
     try:
         if not give_role:
@@ -253,9 +282,9 @@ async def end_vote(view: VoteView):
         # Get guild and role from the discord api
         guild = bot.get_channel(CHANNEL_ID).guild
         role = discord.utils.get(guild.roles, name=request.role)
-        print(thread.name, guild.name, role)
 
         if not role:
+            logger.error(f"Error: Role '{request.role}' not found in the server.")
             await thread.send(f"Error: Role '{request.role}' not found in the server.")
             await _finish_vote(thread, request)
             return
@@ -264,9 +293,11 @@ async def end_vote(view: VoteView):
         member = guild.get_member(view.thread_owner.id) or await guild.fetch_member(
             view.thread_owner.id
         )
-        print(member)
 
         if not member:
+            logger.error(
+                f"Error: Member '{view.thread_owner.mention}' not found in the server."
+            )
             await thread.send(
                 f"Error: Member '{view.thread_owner.mention}' not found in the server."
             )
@@ -274,9 +305,9 @@ async def end_vote(view: VoteView):
             return
 
         # Add the role to the user if possible
-        print("Adding role...")
+        logger.info(f"Adding role '{request.role}' to {view.thread_owner.mention}...")
         if member.id == member.guild.owner_id:
-            print("Cannot modify roles of the server owner.")
+            logger.error("Error: Cannot modify roles of the server owner.")
             await thread.send(
                 f"Error: Cannot modify roles of the server owner, {view.thread_owner.mention}."
             )
@@ -284,7 +315,6 @@ async def end_vote(view: VoteView):
             return
         else:
             await member.add_roles(role)
-            print("Role added successfully.")
             await thread.send(
                 f"Congratulations, {view.thread_owner.mention}! Your application for {request.role} has been approved."
             )
@@ -292,13 +322,12 @@ async def end_vote(view: VoteView):
             return
 
     except discord.Forbidden:
-        print("Bot does not have permission to add roles.")
-        print("Bot does not have permission to add roles.")
+        logger.critical("Error: Bot does not have permission to add roles.")
         await thread.send(
             f"Error: Bot does not have permission to add roles, {view.thread_owner.mention}."
         )
     except discord.HTTPException as e:
-        print(f"Failed to add role: {e}")
+        logger.error(f"Failed to add role due to an error: {e}")
         await thread.send(
             f"Failed to add role due to an error: {e}, {view.thread_owner.mention}."
         )
@@ -315,7 +344,7 @@ async def on_ready():
     Updates the bot object with information loaded from the state file.
     """
 
-    print(f"Logged in as {bot.user}")
+    logger.info(f"Logged in as {bot.user}")
     # Load all active role requests from the saved state on restart
     for request in app.requests.values():
         print(app.requests)
@@ -325,6 +354,8 @@ async def on_ready():
         thread_id = request.thread_id
         end_time = request.end_time
         bot.add_view(VoteView(thread_owner, thread_id, thread_title, end_time))
+
+    logger.info("Loaded all active role requests!")
 
 
 async def _init_request(thread: discord.Thread):
@@ -352,8 +383,8 @@ async def _init_request(thread: discord.Thread):
         # Won't throw if the role was found in the tags
         app.add_request(thread.owner_id, thread_id, thread_title, end_time, role)
     except ValueError as e:
-        print(e)
-        await thread.send(f"Error: {e}")
+        await thread.send(f"Error when creating role request: {e}")
+        logger.error(f"Error when creating role request: {e}")
         return
 
     # Bunch of work needed to check roles below
@@ -367,6 +398,7 @@ async def _init_request(thread: discord.Thread):
     # People can't apply for a role they already have
     if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
         await thread.send(f"Error: You already have the role {request.role}.")
+        logger.error(f"{owner.mention} tried to create a request for {request.role} but they already have it.")
         app.remove_request(thread_id)
         return
 
@@ -387,6 +419,8 @@ async def _init_request(thread: discord.Thread):
     await vote_message.pin()
 
     app.update_bot_message_id(thread_id, vote_message.id)
+
+    logger.info(f"Created new role request for {request.role} in {thread_id} by {owner.mention}.")
 
 
 @bot.event
@@ -429,7 +463,7 @@ async def _restricted_cmd_ctx_to_thread(ctx) -> discord.Thread:
         return
 
     # Check if it's a valid thread in the correct forum channel
-    if thread.parent_id != CHANNEL_ID:
+    if thread.parent.id != CHANNEL_ID:
         await ctx.respond(
             "This command can only be used in the role requests forum channel.",
             ephemeral=True,
