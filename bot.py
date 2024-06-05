@@ -7,8 +7,10 @@ from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime, timezone
 from config import (
+    ACCEPTANCE_THRESHOLDS,
     CHECK_TIME,
     DEFAULT_VOTE,
+    IGNORE_VOTE_WEIGHT,
     VOTE_TIME_PERIOD,
     ROLE_VOTES,
     CHANNEL_ID,
@@ -229,9 +231,9 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             thread.parent.available_tags, name=THREAD_TAGS["Denied"]
         )
 
-        if outcome == "Approved" and approved_tag:
+        if outcome == "Approved" and approved_tag and approved_tag not in thread.applied_tags:
             await thread.edit(applied_tags=thread.applied_tags + [approved_tag])
-        elif outcome == "Denied" and denied_tag:
+        elif outcome == "Denied" and denied_tag and denied_tag not in thread.applied_tags:
             await thread.edit(applied_tags=thread.applied_tags + [denied_tag])
 
         await thread.edit(archived=True, locked=True)
@@ -339,6 +341,7 @@ async def end_vote(view: VoteView):
 
     except asyncio.exceptions.CancelledError:
         # Weird occurance, but thread.send *almost* always causes this even when it works
+        logger.error("Thread.send resulted in an asyncio CancelledError.")
         await _finish_vote(thread, request)
 
 
@@ -422,7 +425,8 @@ async def _init_request(thread: discord.Thread):
     if request.ignore_vote_weight:
         embed.add_field(
             name="",
-            value="*Voting weighting is ignored for this role request. Use `/help` for more info.*",
+            value="*Vote weighting is ignored for this role request. Use `/help` for more info.*",
+            inline=False,
         )
 
     vote_message = await thread.send(embed=embed, view=view)
@@ -552,19 +556,31 @@ async def end_vote_early(
 
 
 # Help command contents
-help_text = """
+thresholds_str = "\n".join(f"{role}: {percent * 100}%" for role, percent in ACCEPTANCE_THRESHOLDS.items())
+vote_weights_str = "\n".join(f"{role}: {weight}" for role, weight in {role: weight for role, weight in ROLE_VOTES.items() if role in VALID_ROLES or role == "Excelsior"}.items())
+vote_weight_ignored_str = "\n".join(f"{role}" for role in IGNORE_VOTE_WEIGHT)
+help_text = f"""
+# Role Voting Bot
+*This bot is under active development. Please provide feedback and keep in mind that not everything is finalized.*
 
 __Source code:__ <https://github.com/0neye/Role-Request-Voting>
 
+## How it works:
 Role Voting helps determine the outcome of an Excelsior role request using an anyonymous voting system.
 
 When a new thread is made in the role requests forum channel, it will send a message with *Yes* and *No* buttons. Select one of these buttons to cast your vote.
 After a set amount of time, the bot will show the results of the poll and automatically assign a role if enough people voted *Yes*.
+### Acceptance Threshold Percentages:
+{thresholds_str}
+### Vote Weights:
+{vote_weights_str}
+### Role Requests Where Vote Weight is Ignored:
+{vote_weight_ignored_str}
 """
 
 
 @bot.command(
-    description="Instructions for using bot, and provides a link to source code"
+    description="Instructions for using bot, and praovides a link to source code"
 )
 async def help(ctx):
     """

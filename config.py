@@ -42,6 +42,7 @@ ROLES = [
         name="Artisan",
         votes=DEFAULT_VOTE,
         percent_accept=0.66,
+        ignore_vote_weight=True,
     ),
     Role(
         name="Visionary",
@@ -83,8 +84,8 @@ IGNORE_VOTE_WEIGHT = [role.name for role in ROLES if role.ignore_vote_weight and
 THREAD_TAGS = {"Approved": "Approved", "Denied": "Denied"}
 
 
-VOTE_TIME_PERIOD = 60  # * 60 * 60 * 24 * 7  # 7 days in seconds
-CHECK_TIME = 50  # how often you want to check if the voting period has ended; in seconds
+VOTE_TIME_PERIOD = 20 # (60 * 60 * 24 * 7)  # 7 days in seconds
+CHECK_TIME = 21  # how often you want to check if the voting period has ended; in seconds
 
 
 CHANNEL_ID = 0  # Forum channel ID
