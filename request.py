@@ -77,6 +77,7 @@ class RoleRequest:
             votes (int): The number of votes. Negative are "no" votes.
         """
 
+        # Also checked in 'bot.py' get_user_votes()
         if self.ignore_vote_weight:
             votes = (-1 if votes < 0 else 1)
 

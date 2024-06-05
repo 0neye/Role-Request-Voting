@@ -107,10 +107,11 @@ class VoteView(discord.ui.View):
                 "You can't vote on your own request!", ephemeral=True
             )
             return
+        
+        request = app.get_request(self.thread_id)
+        vote_changed = request.has_voted(user.id)
 
-        vote_changed = app.get_request(self.thread_id).has_voted(user.id)
-
-        role_votes = self.get_user_votes(user)
+        role_votes = self.get_user_votes(user, request)
 
         # Negate are 'no' votes, positive are 'yes'
         app.vote_on_request(
@@ -127,18 +128,22 @@ class VoteView(discord.ui.View):
                 ephemeral=True,
             )
 
-    def get_user_votes(self, user: discord.Member):
+    def get_user_votes(self, user: discord.Member, request: RoleRequest):
         """
         Get the number of votes a user can cast based on their roles.
         Dependent on the 'ROLE_VOTES' and 'DEFAULT_VOTE' constants in config.
 
         Args:
             user (discord.Member): The user whose votes are being calculated.
+            request (RoleRequest): The role request being voted on.
 
         Returns:
             int: The number of votes the user can cast.
         """
 
+        if request.ignore_vote_weight:
+            return DEFAULT_VOTE
+        
         res = DEFAULT_VOTE
         for role in user.roles:
             if role.name in ROLE_VOTES:
@@ -414,6 +419,11 @@ async def _init_request(thread: discord.Thread):
         name="Deadline",
         value=f"Voting ends <t:{end_time}:F> or <t:{end_time}:R>.",
     )
+    if request.ignore_vote_weight:
+        embed.add_field(
+            name="",
+            value="*Voting weighting is ignored for this role request. Use `/help` for more info.*",
+        )
 
     vote_message = await thread.send(embed=embed, view=view)
     await vote_message.pin()
