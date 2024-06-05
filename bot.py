@@ -513,7 +513,7 @@ async def create_vote(ctx):
     description="End the vote in this thread early. Requires moderator or Paragon roles.",
 )
 async def end_vote_early(
-    ctx, outcome: discord.Option(str, choices=["Approve", "Deny"])
+    ctx, outcome: discord.Option(str, choices=["Approve", "Deny"], required=False)
 ):
     """
     End the vote in the current thread early.
@@ -521,7 +521,7 @@ async def end_vote_early(
 
     Args:
         ctx (discord.ApplicationContext): The context of the command.
-        outcome (str): The outcome of the vote ("Approve" or "Deny").
+        outcome (str) | None: The outcome of the vote ("Approve" or "Deny" if provided).
     """
 
     # Get the thread
@@ -548,10 +548,14 @@ async def end_vote_early(
         )
         return
 
-    await ctx.respond(f"Vote ended by {ctx.user.mention} with outcome: {outcome}")
+    if outcome is not None:
+        await ctx.respond(f"Vote ended early by {ctx.user.mention} with outcome: {outcome}")
 
-    res = True if outcome == "Approve" else False
-    request.veto = (ctx.user.id, res)
+        res = True if outcome == "Approve" else False
+        request.veto = (ctx.user.id, res)
+    else:
+        await ctx.respond(f"Vote ended early by {ctx.user.mention}.")
+        
     await end_vote(view)
 
 
