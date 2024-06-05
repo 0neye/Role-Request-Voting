@@ -109,7 +109,7 @@ class VoteView(discord.ui.View):
                 "You can't vote on your own request!", ephemeral=True
             )
             return
-        
+
         request = app.get_request(self.thread_id)
         vote_changed = request.has_voted(user.id)
 
@@ -145,7 +145,7 @@ class VoteView(discord.ui.View):
 
         if request.ignore_vote_weight:
             return DEFAULT_VOTE
-        
+
         res = DEFAULT_VOTE
         for role in user.roles:
             if role.name in ROLE_VOTES:
@@ -231,9 +231,15 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             thread.parent.available_tags, name=THREAD_TAGS["Denied"]
         )
 
-        if outcome == "Approved" and approved_tag and approved_tag not in thread.applied_tags:
+        if (
+            outcome == "Approved"
+            and approved_tag
+            and approved_tag not in thread.applied_tags
+        ):
             await thread.edit(applied_tags=thread.applied_tags + [approved_tag])
-        elif outcome == "Denied" and denied_tag and denied_tag not in thread.applied_tags:
+        elif (
+            outcome == "Denied" and denied_tag and denied_tag not in thread.applied_tags
+        ):
             await thread.edit(applied_tags=thread.applied_tags + [denied_tag])
 
         await thread.edit(archived=True, locked=True)
@@ -406,7 +412,9 @@ async def _init_request(thread: discord.Thread):
     # People can't apply for a role they already have
     if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
         await thread.send(f"Error: You already have the role {request.role}.")
-        logger.error(f"{owner.mention} tried to create a request for {request.role} but they already have it.")
+        logger.error(
+            f"{owner.mention} tried to create a request for {request.role} but they already have it."
+        )
         app.remove_request(thread_id)
         return
 
@@ -434,7 +442,9 @@ async def _init_request(thread: discord.Thread):
 
     app.update_bot_message_id(thread_id, vote_message.id)
 
-    logger.info(f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'.")
+    logger.info(
+        f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'."
+    )
 
 
 @bot.event
@@ -513,7 +523,7 @@ async def create_vote(ctx):
     description="End the vote in this thread early. Requires moderator or Paragon roles.",
 )
 async def end_vote_early(
-    ctx, outcome: discord.Option(str, choices=["Approve", "Deny"], required=False)
+    ctx, outcome: discord.Option(str, choices=["Approve", "Deny", "Abstain"])
 ):
     """
     End the vote in the current thread early.
@@ -521,7 +531,7 @@ async def end_vote_early(
 
     Args:
         ctx (discord.ApplicationContext): The context of the command.
-        outcome (str) | None: The outcome of the vote ("Approve" or "Deny" if provided).
+        outcome (str): The outcome of the vote ("Approve", "Deny" or "Abstain").
     """
 
     # Get the thread
@@ -548,21 +558,45 @@ async def end_vote_early(
         )
         return
 
-    if outcome is not None:
-        await ctx.respond(f"Vote ended early by {ctx.user.mention} with outcome: {outcome}")
+    if outcome != "Abstain":
+        await ctx.respond(
+            f"Vote ended early by {ctx.user.mention} with outcome: {outcome}"
+        )
 
         res = True if outcome == "Approve" else False
         request.veto = (ctx.user.id, res)
     else:
         await ctx.respond(f"Vote ended early by {ctx.user.mention}.")
-        
+
     await end_vote(view)
 
+# Bunch of settup for the help command
+thresholds_str = "\n".join(
+    f"{percent1 * 100}%: "
+    + ", ".join(
+        [
+            role
+            for role, percent2 in ACCEPTANCE_THRESHOLDS.items()
+            if percent1 == percent2
+        ]
+    )
+    for percent1 in set(sorted(ACCEPTANCE_THRESHOLDS.values()))
+)
+relevant_roles = {
+        role: weight
+        for role, weight in ROLE_VOTES.items()
+        if role in VALID_ROLES or role == "Excelsior"
+    }
+vote_weights_str = "\n".join(
+    f"{weight1}: " +
+    ", ".join(
+        [role for role, weight2 in relevant_roles.items() if weight1 == weight2]
+    )
+    for weight1 in set(sorted(relevant_roles.values()))
+)
+vote_weight_ignored_str = "\n".join(f"{role}" for role in IGNORE_VOTE_WEIGHT)
 
 # Help command contents
-thresholds_str = "\n".join(f"{role}: {percent * 100}%" for role, percent in ACCEPTANCE_THRESHOLDS.items())
-vote_weights_str = "\n".join(f"{role}: {weight}" for role, weight in {role: weight for role, weight in ROLE_VOTES.items() if role in VALID_ROLES or role == "Excelsior"}.items())
-vote_weight_ignored_str = "\n".join(f"{role}" for role in IGNORE_VOTE_WEIGHT)
 help_text = f"""
 # Role Voting Bot
 *This bot is under active development. Please provide feedback and keep in mind that not everything is finalized.*

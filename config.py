@@ -65,6 +65,7 @@ ROLES = [
     ),
 ]
 
+
 # Role to vote count mapping
 ROLE_VOTES = {role.name: role.votes for role in ROLES}
 
@@ -85,7 +86,7 @@ THREAD_TAGS = {"Approved": "Approved", "Denied": "Denied"}
 
 
 VOTE_TIME_PERIOD = 20 # (60 * 60 * 24 * 7)  # 7 days in seconds
-CHECK_TIME = 21  # how often you want to check if the voting period has ended; in seconds
+CHECK_TIME = 60  # how often you want to check if the voting period has ended; in seconds
 
 
 CHANNEL_ID = 0  # Forum channel ID
