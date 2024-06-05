@@ -15,7 +15,6 @@ class RoleRequest:
             title (str): The title of the request (should contain the role if 'role' is None).
             end_time (int): The end time of the request as a timestamp.
             role (str, optional): The role being requested. Defaults to None.
-            num_users: The number of users that cast a vote in that thread.
         """
 
         self.user_id: int = user_id  # user ID
@@ -65,7 +64,7 @@ class RoleRequest:
         instance.bot_message_id = data["bot_message_id"]
         instance.yes_votes = data["yes_votes"]
         instance.no_votes = data["no_votes"]
-        # instance.num_users = data["num_users"]
+        instance.num_users = data["num_users"]
         instance.veto = data["veto"]
         return instance
 

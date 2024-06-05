@@ -411,8 +411,7 @@ async def update_displayed_member_count(): # Called whenever the displayed membe
             print(f"Error: Vote message with ID {vote_message_id} not found in thread {thread_id}.")
             continue
 
-        yes_votes, no_votes = request.get_votes()
-        total_votes = yes_votes + no_votes
+        total_votes = request.num_users
         embed = vote_message.embeds[0] #Edit the member count on the embed
         embed.set_field_at(
             index=1,
