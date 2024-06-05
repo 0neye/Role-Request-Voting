@@ -261,7 +261,7 @@ async def end_vote(view: VoteView):
     app.remove_request(view.thread_id)
 
     # Get the current thread
-    thread = bot.get_channel(view.thread_id)
+    thread = bot.get_channel(view.thread_id) or await bot.fetch_channel(view.thread_id)
     if not isinstance(thread, discord.Thread):
         logger.error("Error: Thread not found or is not a thread.")
         return
@@ -280,7 +280,7 @@ async def end_vote(view: VoteView):
             return
 
         # Get guild and role from the discord api
-        guild = bot.get_channel(CHANNEL_ID).guild
+        guild = (bot.get_channel(CHANNEL_ID) or await bot.fetch_guild(CHANNEL_ID)).guild
         role = discord.utils.get(guild.roles, name=request.role)
 
         if not role:
@@ -389,7 +389,7 @@ async def _init_request(thread: discord.Thread):
 
     # Bunch of work needed to check roles below
     request = app.get_request(thread_id)
-    guild = bot.get_channel(CHANNEL_ID).guild
+    guild = (bot.get_channel(CHANNEL_ID) or await bot.fetch_guild(CHANNEL_ID)).guild
     owner = await bot.get_or_fetch_user(thread.owner_id)
     owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(
         thread.owner_id
@@ -420,7 +420,7 @@ async def _init_request(thread: discord.Thread):
 
     app.update_bot_message_id(thread_id, vote_message.id)
 
-    logger.info(f"Created new role request for {request.role} in {thread_id} by {owner.mention}.")
+    logger.info(f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'.")
 
 
 @bot.event

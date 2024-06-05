@@ -1,4 +1,4 @@
-from config import PERCENT_ACCEPT, VALID_ROLES
+from config import ACCEPTANCE_THRESHOLDS, IGNORE_VOTE_WEIGHT, VALID_ROLES
 import re
 
 
@@ -8,7 +8,7 @@ class RoleRequest:
     ):
         """
         Initialize a RoleRequest instance. Extracts role from title if not given.
-        Dependent on 'VALID_ROLES' constant in config.
+        Dependent on 'VALID_ROLES' and 'IGNORE_VOTE_WEIGHT' constants in config.
 
         Args:
             user_id (int): The ID of the user making the request.
@@ -26,8 +26,10 @@ class RoleRequest:
         self.role = role
         self.yes_votes: list = []  # List of usernames, vote #
         self.no_votes: list = []  # List of usernames, vote #
+
         # (int, bool) = (user_id, veto); user being the one to make the veto
         self.veto: None | (int, bool) = None
+        self.ignore_vote_weight = False
 
         # Extract role from title if not provided
         if not self.role:
@@ -38,8 +40,8 @@ class RoleRequest:
                     break
             else:
                 raise ValueError("Invalid role.")
-
-        print(f"New Request: {self.user_id} for {self.role}: '{self.title}'")
+        
+        self.ignore_vote_weight = self.role in IGNORE_VOTE_WEIGHT
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -75,7 +77,9 @@ class RoleRequest:
             votes (int): The number of votes. Negative are "no" votes.
         """
 
-        # Negative are no votes, positive are yes votes
+        if self.ignore_vote_weight:
+            votes = (-1 if votes < 0 else 1)
+
         if votes < 0:
             self.no_votes.append((user_id, votes * -1))
         else:
@@ -123,7 +127,7 @@ class RoleRequest:
     def result(self):
         """
         Get the result of the role request. 
-        Dependent on 'PERCENT_ACCEPT' constant in config.
+        Dependent on 'ACCEPTANCE_THRESHOLDS' constant in config.
 
         Returns:
             bool: True if the request is accepted, False otherwise.
@@ -131,9 +135,10 @@ class RoleRequest:
 
         if self.veto is None:
             yes_count, no_count = self.get_votes()
+            percent_accept = ACCEPTANCE_THRESHOLDS[self.role]
             return (
                 True
-                if (yes_count / (no_count if no_count > 0 else 1)) >= PERCENT_ACCEPT
+                if (yes_count / (no_count if no_count > 0 else 1)) >= percent_accept
                 else False
             )
         else:
