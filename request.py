@@ -1,10 +1,9 @@
 from config import ACCEPTANCE_THRESHOLDS, IGNORE_VOTE_WEIGHT, VALID_ROLES
 import re
 
-
 class RoleRequest:
     def __init__(
-        self, user_id: int, thread_id: int, title: str, end_time: int, role: str = None
+        self, user_id: int, thread_id: int, title: str, end_time: int, role: str = None,
     ):
         """
         Initialize a RoleRequest instance. Extracts role from title if not given.
@@ -26,6 +25,7 @@ class RoleRequest:
         self.role = role
         self.yes_votes: list = []  # List of usernames, vote #
         self.no_votes: list = []  # List of usernames, vote #
+        self.num_users: int = 0 # Number of users that cast a vote
 
         # (int, bool) = (user_id, veto); user being the one to make the veto
         self.veto: None | (int, bool) = None
@@ -60,11 +60,13 @@ class RoleRequest:
             thread_id=data["thread_id"],
             title=data["title"],
             end_time=data["end_time"],
-            role = data["role"]
+            role = data["role"],
+            # num_users = data["num_users"],
         )
         instance.bot_message_id = data["bot_message_id"]
         instance.yes_votes = data["yes_votes"]
         instance.no_votes = data["no_votes"]
+        instance.num_users = data["num_users"]
         instance.veto = data["veto"]
         return instance
 
@@ -85,6 +87,11 @@ class RoleRequest:
             self.no_votes.append((user_id, votes * -1))
         else:
             self.yes_votes.append((user_id, votes))
+        
+        self.update_usercount() #Update the user count
+        # print(f"Yes list: {self.yes_votes}")
+        # print(f"No list: {self.no_votes}")
+        # print(f"Updated member count: {self.num_users}\n")
 
     def get_votes(self):
         """
@@ -97,6 +104,10 @@ class RoleRequest:
         yes_count = sum(vote[1] for vote in self.yes_votes)
         no_count = sum(vote[1] for vote in self.no_votes)
         return (yes_count, no_count)
+    
+    def update_usercount(self):
+        self.num_users = len(self.yes_votes) + len(self.no_votes)
+        return
 
     def has_voted(self, user_id: int):
         """
@@ -108,7 +119,6 @@ class RoleRequest:
         Returns:
             bool: True if the user has voted, False otherwise.
         """
-
         return user_id in [vote[0] for vote in self.yes_votes + self.no_votes]
 
     def change_vote(self, user_id: int, new_votes: int):
@@ -162,5 +172,6 @@ class RoleRequest:
             "role": self.role,
             "yes_votes": self.yes_votes,
             "no_votes": self.no_votes,
+            "num_users": self.num_users,
             "veto": self.veto,
         }
