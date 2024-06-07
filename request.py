@@ -7,7 +7,7 @@ class RoleRequest:
     ):
         """
         Initialize a RoleRequest instance. Extracts role from title if not given.
-        Dependent on 'VALID_ROLES' and 'IGNORE_VOTE_WEIGHT' constants in config.
+        Dependent on 'VALID_ROLES', 'ACCEPTANCE_THRESHOLDS' and 'IGNORE_VOTE_WEIGHT' constants in config.
 
         Args:
             user_id (int): The ID of the user making the request.
@@ -41,6 +41,7 @@ class RoleRequest:
             else:
                 raise ValueError("Invalid role.")
         
+        self.threshold = ACCEPTANCE_THRESHOLDS[self.role]
         self.ignore_vote_weight = self.role in IGNORE_VOTE_WEIGHT
 
     @classmethod
@@ -87,10 +88,7 @@ class RoleRequest:
         else:
             self.yes_votes.append((user_id, votes))
         
-        self._update_usercount() #Update the user count
-        # print(f"Yes list: {self.yes_votes}")
-        # print(f"No list: {self.no_votes}")
-        # print(f"Updated member count: {self.num_users}\n")
+        self._update_usercount()
 
     def get_votes(self):
         """
@@ -136,8 +134,7 @@ class RoleRequest:
 
     def result(self):
         """
-        Get the result of the role request. 
-        Dependent on 'ACCEPTANCE_THRESHOLDS' constant in config.
+        Get the result of the role request.
 
         Returns:
             bool: True if the request is accepted, False otherwise.
@@ -145,10 +142,9 @@ class RoleRequest:
 
         if self.veto is None:
             yes_count, no_count = self.get_votes()
-            percent_accept = ACCEPTANCE_THRESHOLDS[self.role]
             return (
                 True
-                if (yes_count / (no_count if no_count > 0 else 1)) >= percent_accept
+                if (yes_count / (no_count if no_count > 0 else 1)) >= self.threshold
                 else False
             )
         else:

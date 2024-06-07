@@ -85,14 +85,14 @@ class VoteView(discord.ui.View):
     )
     async def yes_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "yes")
-        await self.update_displayed_member_count()
+        await self._update_displayed_member_count()
 
     @discord.ui.button(
         label="No", style=discord.ButtonStyle.danger, custom_id="vote_no"
     )
     async def no_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "no")
-        await self.update_displayed_member_count()
+        await self._update_displayed_member_count()
 
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         """
@@ -154,8 +154,8 @@ class VoteView(discord.ui.View):
                 res = max(res, ROLE_VOTES[role.name])
 
         return res
-    
-    async def update_displayed_member_count(self):
+
+    async def _update_displayed_member_count(self):
         """
         Called whenever the displayed member count needs to update
         """
@@ -166,11 +166,13 @@ class VoteView(discord.ui.View):
         vote_message = await thread.fetch_message(vote_message_id)
         total_votes = request.num_users
 
-        embed = vote_message.embeds[0] #Edit the member count on the embed
+        # Edit the member count on the embed
+        embed = vote_message.embeds[0]
         embed.set_field_at(
-            index=1,
-            name="Number of members who voted:",
-            value=f"{total_votes} member(s)"
+            index=2,  # the 3rd field
+            name="",
+            value=f"`{request.num_users}` {'member has' if request.num_users == 1 else 'members have'} voted on this request.",
+            inline=False,
         )
         await vote_message.edit(embed=embed)
 
@@ -226,15 +228,18 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             colour=Colour.green() if outcome == "Approved" else Colour.red(),
         )
         embed.add_field(
-            name="Yes Votes", value=f"{yes_votes} ({yes_percentage:.2f}%)", inline=True
+            name=f"Yes Votes{'' if request.ignore_vote_weight else ' (weighted)'}", value=f"{yes_votes} ({yes_percentage:.2f}%)", inline=True
         )
         embed.add_field(
-            name="No Votes", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True
+            name=f"No Votes{'' if request.ignore_vote_weight else ' (weighted)'}", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True
         )
-        embed.add_field(
-            name="", value=vote_bar, inline=False
-        )
-        embed.add_field(name=f"Total number of participating member(s): {request.num_users}", value="", inline=False)
+        embed.add_field(name="", value=vote_bar, inline=False)
+        if total_votes > 0:
+            embed.add_field(
+                name=f"Total participating members: `{request.num_users}`",
+                value="",
+                inline=False,
+            )
 
         # Add veto disclaimer
         if request.veto is not None:
@@ -455,8 +460,14 @@ async def _init_request(thread: discord.Thread):
         value=f"Voting ends <t:{end_time}:F> or <t:{end_time}:R>.",
     )
     embed.add_field(
-        name="Total voters",
-        value=f"Number of members who voted: `{request.num_users}`"
+        name="Threshold",
+        value=f"**{request.threshold*100:.0f}%** 'Yes'{'' if request.ignore_vote_weight else ' (weighted)'} votes are required to approve.",
+    )
+    # Index 2
+    embed.add_field(
+        name="",
+        value=f"`{request.num_users}` {'member has' if request.num_users == 1 else 'members have'} voted on this request.",
+        inline=False,
     )
     if request.ignore_vote_weight:
         embed.add_field(
@@ -473,6 +484,7 @@ async def _init_request(thread: discord.Thread):
     logger.info(
         f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'."
     )
+
 
 @bot.event
 async def on_thread_create(thread: discord.Thread):
@@ -600,6 +612,7 @@ async def end_vote_early(
 
     await end_vote(view)
 
+
 # Bunch of setup for the help command
 # Create a string that lists the acceptance thresholds and the roles associated with each threshold
 thresholds_str = "\n".join(
@@ -611,23 +624,30 @@ thresholds_str = "\n".join(
             if percent1 == percent2  # Match roles with the same threshold
         ]
     )
-    for percent1 in set(sorted(ACCEPTANCE_THRESHOLDS.values()))  # Ensure unique and sorted thresholds
+    for percent1 in set(
+        sorted(ACCEPTANCE_THRESHOLDS.values())
+    )  # Ensure unique and sorted thresholds
 )
 
 # Create a dictionary of roles and their vote weights, including only valid roles and "Excelsior"
 relevant_roles = {
     role: weight  # Map each role to its weight
     for role, weight in ROLE_VOTES.items()  # Iterate over the role votes
-    if role in VALID_ROLES or role == "Excelsior"  # Include only valid roles or "Excelsior"
+    if role in VALID_ROLES
+    or role == "Excelsior"  # Include only valid roles or "Excelsior"
 }
 
 # Create a string that lists the vote weights and the roles associated with each weight
 vote_weights_str = "\n".join(
-    f"{weight1}: " +  # Convert the weight to a string
-    ", ".join(
-        [role for role, weight2 in relevant_roles.items() if weight1 == weight2]  # List roles with the same weight
+    f"{weight1}: "  # Convert the weight to a string
+    + ", ".join(
+        [
+            role for role, weight2 in relevant_roles.items() if weight1 == weight2
+        ]  # List roles with the same weight
     )
-    for weight1 in set(sorted(relevant_roles.values()))  # Ensure unique and sorted weights
+    for weight1 in set(
+        sorted(relevant_roles.values())
+    )  # Ensure unique and sorted weights
 )
 
 # Create a string that lists the roles where vote weight is ignored
@@ -663,11 +683,13 @@ async def help(ctx):
     """
     await ctx.respond(help_text)
 
+
 @bot.command(description="Returns the latency of the bot in ms")
 async def ping(ctx):
     latency = bot.latency
     latency_ms = latency * 1000
     await ctx.respond(f"`Ping: {latency_ms:.2f}ms`")
+
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
