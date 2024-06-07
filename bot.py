@@ -56,14 +56,14 @@ class VoteView(discord.ui.View):
     )
     async def yes_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "yes")
-        await update_displayed_member_count()
+        await update_displayed_member_count(self)
 
     @discord.ui.button(
         label="No", style=discord.ButtonStyle.danger, custom_id="vote_no"
     )
     async def no_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "no")
-        await update_displayed_member_count()
+        await update_displayed_member_count(self)
 
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         """
@@ -396,29 +396,21 @@ async def _init_request(thread: discord.Thread):
 
     app.update_bot_message_id(thread_id, vote_message.id)
 
-async def update_displayed_member_count(): # Called whenever the displayed member count needs to update
-    for request in app.requests.values():
-        thread_id = request.thread_id
-        thread = bot.get_channel(thread_id)
-        if not isinstance(thread, discord.Thread):
-            print(f"Error: Thread with ID {thread_id} not found or is not a thread.")
-            continue
+async def update_displayed_member_count(self): # Called whenever the displayed member count needs to update
 
-        vote_message_id = request.bot_message_id
-        try:
-            vote_message = await thread.fetch_message(vote_message_id)
-        except discord.NotFound:
-            print(f"Error: Vote message with ID {vote_message_id} not found in thread {thread_id}.")
-            continue
+    thread = bot.get_channel(self.thread_id)
+    request = app.get_request(self.thread_id)
+    vote_message_id = request.bot_message_id
+    vote_message = await thread.fetch_message(vote_message_id)
+    total_votes = request.num_users
 
-        total_votes = request.num_users
-        embed = vote_message.embeds[0] #Edit the member count on the embed
-        embed.set_field_at(
-            index=1,
-            name="Number of members who voted:",
-            value=f"{total_votes} member(s)"
-        )
-        await vote_message.edit(embed=embed)
+    embed = vote_message.embeds[0] #Edit the member count on the embed
+    embed.set_field_at(
+        index=1,
+        name="Number of members who voted:",
+        value=f"{total_votes} member(s)"
+    )
+    await vote_message.edit(embed=embed)
 
 @bot.event
 async def on_thread_create(thread: discord.Thread):
