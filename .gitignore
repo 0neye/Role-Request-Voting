@@ -1,3 +1,4 @@
 .env
 requests_state.json
+requests_log.txt
 __pycache__/

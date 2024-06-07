@@ -1,4 +1,4 @@
-from config import PERCENT_ACCEPT, VALID_ROLES
+from config import ACCEPTANCE_THRESHOLDS, IGNORE_VOTE_WEIGHT, VALID_ROLES
 import re
 
 class RoleRequest:
@@ -7,7 +7,7 @@ class RoleRequest:
     ):
         """
         Initialize a RoleRequest instance. Extracts role from title if not given.
-        Dependent on 'VALID_ROLES' constant in config.
+        Dependent on 'VALID_ROLES', 'ACCEPTANCE_THRESHOLDS' and 'IGNORE_VOTE_WEIGHT' constants in config.
 
         Args:
             user_id (int): The ID of the user making the request.
@@ -26,8 +26,10 @@ class RoleRequest:
         self.yes_votes: list = []  # List of usernames, vote #
         self.no_votes: list = []  # List of usernames, vote #
         self.num_users: int = 0 # Number of users that cast a vote
+
         # (int, bool) = (user_id, veto); user being the one to make the veto
         self.veto: None | (int, bool) = None
+        self.ignore_vote_weight = False
 
         # Extract role from title if not provided
         if not self.role:
@@ -38,8 +40,9 @@ class RoleRequest:
                     break
             else:
                 raise ValueError("Invalid role.")
-
-        print(f"New Request: {self.user_id} for {self.role}: '{self.title}'")
+        
+        self.threshold = ACCEPTANCE_THRESHOLDS[self.role]
+        self.ignore_vote_weight = self.role in IGNORE_VOTE_WEIGHT
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -59,7 +62,6 @@ class RoleRequest:
             title=data["title"],
             end_time=data["end_time"],
             role = data["role"],
-            # num_users = data["num_users"],
         )
         instance.bot_message_id = data["bot_message_id"]
         instance.yes_votes = data["yes_votes"]
@@ -77,16 +79,16 @@ class RoleRequest:
             votes (int): The number of votes. Negative are "no" votes.
         """
 
-        # Negative are no votes, positive are yes votes
+        # Also checked in 'bot.py' get_user_votes()
+        if self.ignore_vote_weight:
+            votes = (-1 if votes < 0 else 1)
+
         if votes < 0:
             self.no_votes.append((user_id, votes * -1))
         else:
             self.yes_votes.append((user_id, votes))
         
-        self.update_usercount() #Update the user count
-        # print(f"Yes list: {self.yes_votes}")
-        # print(f"No list: {self.no_votes}")
-        # print(f"Updated member count: {self.num_users}\n")
+        self._update_usercount()
 
     def get_votes(self):
         """
@@ -100,7 +102,7 @@ class RoleRequest:
         no_count = sum(vote[1] for vote in self.no_votes)
         return (yes_count, no_count)
     
-    def update_usercount(self):
+    def _update_usercount(self):
         self.num_users = len(self.yes_votes) + len(self.no_votes)
         return
 
@@ -132,8 +134,7 @@ class RoleRequest:
 
     def result(self):
         """
-        Get the result of the role request. 
-        Dependent on 'PERCENT_ACCEPT' constant in config.
+        Get the result of the role request.
 
         Returns:
             bool: True if the request is accepted, False otherwise.
@@ -143,7 +144,7 @@ class RoleRequest:
             yes_count, no_count = self.get_votes()
             return (
                 True
-                if (yes_count / (no_count if no_count > 0 else 1)) >= PERCENT_ACCEPT
+                if (yes_count / (no_count if no_count > 0 else 1)) >= self.threshold
                 else False
             )
         else:
