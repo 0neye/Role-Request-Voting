@@ -56,12 +56,14 @@ class VoteView(discord.ui.View):
     )
     async def yes_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "yes")
+        await update_displayed_member_count(self)
 
     @discord.ui.button(
         label="No", style=discord.ButtonStyle.danger, custom_id="vote_no"
     )
     async def no_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "no")
+        await update_displayed_member_count(self)
 
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         """
@@ -176,7 +178,10 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         embed.add_field(
             name="No Votes", value=f"{no_votes} ({no_percentage:.2f}%)", inline=True
         )
-        embed.add_field(name="", value=vote_bar, inline=False)
+        embed.add_field(
+            name="", value=vote_bar, inline=False
+        )
+        embed.add_field(name=f"Total number of participating member(s): {request.num_users}", value="", inline=False)
 
         # Add veto disclaimer
         if request.veto is not None:
@@ -382,11 +387,30 @@ async def _init_request(thread: discord.Thread):
         name="Deadline",
         value=f"Voting ends <t:{end_time}:F> or <t:{end_time}:R>.",
     )
-
+    embed.add_field(
+        name="Number of members who voted:",
+        value=f"{request.num_users} member(s)"
+    )
     vote_message = await thread.send(embed=embed, view=view)
     await vote_message.pin()
 
     app.update_bot_message_id(thread_id, vote_message.id)
+
+async def update_displayed_member_count(self): # Called whenever the displayed member count needs to update
+
+    thread = bot.get_channel(self.thread_id)
+    request = app.get_request(self.thread_id)
+    vote_message_id = request.bot_message_id
+    vote_message = await thread.fetch_message(vote_message_id)
+    total_votes = request.num_users
+
+    embed = vote_message.embeds[0] #Edit the member count on the embed
+    embed.set_field_at(
+        index=1,
+        name="Number of members who voted:",
+        value=f"{total_votes} member(s)"
+    )
+    await vote_message.edit(embed=embed)
 
 @bot.event
 async def on_thread_create(thread: discord.Thread):
@@ -522,6 +546,11 @@ async def help(ctx):
     """
     await ctx.respond(help_text)
 
+@bot.command(description="Returns the latency of the bot in ms")
+async def ping(ctx):
+    latency = bot.latency
+    latency_ms = latency * 1000
+    await ctx.respond(f"`Ping: {latency_ms:.2f}ms`")
 
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
