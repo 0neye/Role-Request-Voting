@@ -61,7 +61,6 @@ class RoleRequest:
             title=data["title"],
             end_time=data["end_time"],
             role = data["role"],
-            # num_users = data["num_users"],
         )
         instance.bot_message_id = data["bot_message_id"]
         instance.yes_votes = data["yes_votes"]
@@ -88,7 +87,7 @@ class RoleRequest:
         else:
             self.yes_votes.append((user_id, votes))
         
-        self.update_usercount() #Update the user count
+        self._update_usercount() #Update the user count
         # print(f"Yes list: {self.yes_votes}")
         # print(f"No list: {self.no_votes}")
         # print(f"Updated member count: {self.num_users}\n")
@@ -105,7 +104,7 @@ class RoleRequest:
         no_count = sum(vote[1] for vote in self.no_votes)
         return (yes_count, no_count)
     
-    def update_usercount(self):
+    def _update_usercount(self):
         self.num_users = len(self.yes_votes) + len(self.no_votes)
         return
 
