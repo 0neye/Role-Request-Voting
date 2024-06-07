@@ -558,7 +558,9 @@ async def end_vote_early(
         )
         return
 
+    # End the vote
     if outcome != "Abstain":
+        # If they veto
         await ctx.respond(
             f"Vote ended early by {ctx.user.mention} with outcome: {outcome}"
         )
@@ -566,34 +568,42 @@ async def end_vote_early(
         res = True if outcome == "Approve" else False
         request.veto = (ctx.user.id, res)
     else:
+        # If they don't veto
         await ctx.respond(f"Vote ended early by {ctx.user.mention}.")
 
     await end_vote(view)
 
-# Bunch of settup for the help command
+# Bunch of setup for the help command
+# Create a string that lists the acceptance thresholds and the roles associated with each threshold
 thresholds_str = "\n".join(
-    f"{percent1 * 100}%: "
+    f"{percent1 * 100}%: "  # Convert the threshold to a percentage string
     + ", ".join(
         [
-            role
-            for role, percent2 in ACCEPTANCE_THRESHOLDS.items()
-            if percent1 == percent2
+            role  # List the roles
+            for role, percent2 in ACCEPTANCE_THRESHOLDS.items()  # Iterate over the acceptance thresholds
+            if percent1 == percent2  # Match roles with the same threshold
         ]
     )
-    for percent1 in set(sorted(ACCEPTANCE_THRESHOLDS.values()))
+    for percent1 in set(sorted(ACCEPTANCE_THRESHOLDS.values()))  # Ensure unique and sorted thresholds
 )
+
+# Create a dictionary of roles and their vote weights, including only valid roles and "Excelsior"
 relevant_roles = {
-        role: weight
-        for role, weight in ROLE_VOTES.items()
-        if role in VALID_ROLES or role == "Excelsior"
-    }
+    role: weight  # Map each role to its weight
+    for role, weight in ROLE_VOTES.items()  # Iterate over the role votes
+    if role in VALID_ROLES or role == "Excelsior"  # Include only valid roles or "Excelsior"
+}
+
+# Create a string that lists the vote weights and the roles associated with each weight
 vote_weights_str = "\n".join(
-    f"{weight1}: " +
+    f"{weight1}: " +  # Convert the weight to a string
     ", ".join(
-        [role for role, weight2 in relevant_roles.items() if weight1 == weight2]
+        [role for role, weight2 in relevant_roles.items() if weight1 == weight2]  # List roles with the same weight
     )
-    for weight1 in set(sorted(relevant_roles.values()))
+    for weight1 in set(sorted(relevant_roles.values()))  # Ensure unique and sorted weights
 )
+
+# Create a string that lists the roles where vote weight is ignored
 vote_weight_ignored_str = "\n".join(f"{role}" for role in IGNORE_VOTE_WEIGHT)
 
 # Help command contents
