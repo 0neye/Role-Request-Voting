@@ -63,6 +63,13 @@ ROLES = [
         can_be_voted_on=False,
         command_whitelisted=True,
     ),
+    Role(
+        name="Bot Manager",
+        votes=DEFAULT_VOTE,
+        percent_accept=0.0,
+        can_be_voted_on=False,
+        command_whitelisted=True,
+    ),
 ]
 
 
