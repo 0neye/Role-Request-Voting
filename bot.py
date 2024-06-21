@@ -172,7 +172,6 @@ class VoteView(discord.ui.View):
 
         print("checking...")
         if int(datetime.now(timezone.utc).timestamp()) >= self.end_time:
-            self.check_time.cancel()
             await end_vote(self)
 
 
@@ -356,13 +355,14 @@ async def on_ready():
     logger.info(f"Logged in as {bot.user}")
     # Load all active role requests from the saved state on restart
     for request in app.requests.values():
-        print(app.requests)
+        request: RoleRequest
+        print(request.to_dict())
         thread_owner_id = request.user_id
         thread_owner = await bot.get_or_fetch_user(thread_owner_id)
         thread_title = request.title
         thread_id = request.thread_id
         end_time = request.end_time
-        bot.add_view(VoteView(thread_owner, thread_id, thread_title, end_time))
+        bot.add_view(view=VoteView(thread_owner, thread_id, thread_title, end_time), message_id=request.bot_message_id)
 
     logger.info("Loaded all active role requests!")
 
