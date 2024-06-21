@@ -238,12 +238,6 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             inline=True,
         )
 
-        # Add vote bar
-        if file:
-            embed.set_image(url=f"attachment://{file.filename}")
-        else:
-            embed.add_field(name="", value="No votes cast.", inline=False)
-
         # Add member count
         if total_votes > 0:
             embed.add_field(
@@ -261,7 +255,13 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
                 inline=False,
             )
 
-        await vote_message.edit(content=None, embed=embed, view=None, file=file)
+        # Deal with image
+        if file:
+            embed.set_image(url=f"attachment://{file.filename}")
+            await vote_message.edit(content=None, embed=embed, view=None, file=file)
+        else:
+            embed.add_field(name="", value="No votes cast.", inline=False)
+            await vote_message.edit(content=None, embed=embed, view=None)
 
         # Add the tag "Approved" or "Denied" to the thread, then close it.
         approved_tag = discord.utils.get(
