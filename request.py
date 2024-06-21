@@ -98,8 +98,8 @@ class RoleRequest:
             tuple (yes_count, no_count): A tuple containing the count of yes votes and no votes.
         """
 
-        yes_count = sum(vote[1] for vote in self.yes_votes)
-        no_count = sum(vote[1] for vote in self.no_votes)
+        yes_count = sum(vote[1] for vote in self.yes_votes) or 0
+        no_count = sum(vote[1] for vote in self.no_votes) or 0
         return (yes_count, no_count)
     
     def _update_usercount(self):
@@ -142,9 +142,10 @@ class RoleRequest:
 
         if self.veto is None:
             yes_count, no_count = self.get_votes()
+            total = yes_count + no_count
             return (
                 True
-                if (yes_count / (no_count if no_count > 0 else 1)) >= self.threshold
+                if (yes_count / (total if total > 0 else 1)) >= self.threshold
                 else False
             )
         else:
