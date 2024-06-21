@@ -155,7 +155,6 @@ class VoteView(discord.ui.View):
         request = app.get_request(self.thread_id)
         vote_message_id = request.bot_message_id
         vote_message = await thread.fetch_message(vote_message_id)
-        total_votes = request.num_users
 
         # Edit the member count on the embed
         embed = vote_message.embeds[0]
