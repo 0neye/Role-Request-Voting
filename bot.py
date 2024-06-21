@@ -36,11 +36,13 @@ logger.setLevel(logging.INFO)
 
 file_handler = logging.FileHandler(LOG_FILE_NAME)
 file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s - %(levelname)s - %(message)s"))
 
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+console_handler.setFormatter(logging.Formatter(
+    "%(asctime)s - %(levelname)s - %(message)s"))
 
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
@@ -108,7 +110,8 @@ class VoteView(discord.ui.View):
         role_votes = self._get_user_votes(user, request)
 
         # Negate are 'no' votes, positive are 'yes'
-        app.vote_on_request(self.thread_id, user.id, role_votes * (-1 if vote_type == "no" else 1))
+        app.vote_on_request(self.thread_id, user.id,
+                            role_votes * (-1 if vote_type == "no" else 1))
         if vote_changed:
             await interaction.response.send_message(
                 f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.",
@@ -152,7 +155,6 @@ class VoteView(discord.ui.View):
         request = app.get_request(self.thread_id)
         vote_message_id = request.bot_message_id
         vote_message = await thread.fetch_message(vote_message_id)
-        total_votes = request.num_users
 
         # Edit the member count on the embed
         embed = vote_message.embeds[0]
@@ -195,18 +197,31 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         outcome = "Approved" if request.result() is True else "Denied"
 
         total_votes = yes_votes + no_votes
-        yes_percentage = (yes_votes / total_votes) * 100 if total_votes > 0 else 0
-        no_percentage = (no_votes / total_votes) * 100 if total_votes > 0 else 0
+        yes_percentage = (yes_votes / total_votes) * \
+            100 if total_votes > 0 else 0
+        no_percentage = (no_votes / total_votes) * \
+            100 if total_votes > 0 else 0
+        file = None
 
-        if total_votes == 0:
-            vote_bar = "No votes cast."
-        else:
-            GREEN = "\u001b[32m"
-            RED = "\u001b[31m"
-            RESET = "\u001b[0m"
-            yes_bars = round((yes_votes / total_votes) * 50)
-            no_bars = round((no_votes / total_votes) * 50)
-            vote_bar = f"```ansi\n{GREEN}{'|' * yes_bars}{RESET}{RED}{'|' * no_bars}{RESET}```"
+        if total_votes > 0:
+            import matplotlib.pyplot as plt
+            import io
+
+            # Create a pie chart
+            fig, ax = plt.subplots()
+            ax.pie([yes_votes, no_votes], labels=['Yes', 'No'], colors=['green', 'red'],
+                   autopct='%1.1f%%', startangle=90, textprops={'color': 'w', 'size': 'x-large'})
+            # Equal aspect ratio ensures that pie is drawn as a circle.
+            ax.axis('equal')
+
+            # Save the plot to a BytesIO object with a transparent background
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', bbox_inches='tight',
+                        pad_inches=0, transparent=True)
+            buf.seek(0)
+
+            # Create a file from the BytesIO object
+            file = discord.File(buf, filename="vote_pie.png")
 
         embed = Embed(
             title=f"Voting Results - {request.role} - **{outcome}**",
@@ -222,7 +237,8 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             value=f"{no_votes} ({no_percentage:.2f}%)",
             inline=True,
         )
-        embed.add_field(name="", value=vote_bar, inline=False)
+
+        # Add member count
         if total_votes > 0:
             embed.add_field(
                 name=f"Total participating members: `{request.num_users}`",
@@ -239,11 +255,19 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
                 inline=False,
             )
 
-        await vote_message.edit(content=None, embed=embed, view=None)
+        # Deal with image
+        if file:
+            embed.set_image(url=f"attachment://{file.filename}")
+            await vote_message.edit(content=None, embed=embed, view=None, file=file)
+        else:
+            embed.add_field(name="", value="No votes cast.", inline=False)
+            await vote_message.edit(content=None, embed=embed, view=None)
 
         # Add the tag "Approved" or "Denied" to the thread, then close it.
-        approved_tag = discord.utils.get(thread.parent.available_tags, name=THREAD_TAGS["Approved"])
-        denied_tag = discord.utils.get(thread.parent.available_tags, name=THREAD_TAGS["Denied"])
+        approved_tag = discord.utils.get(
+            thread.parent.available_tags, name=THREAD_TAGS["Approved"])
+        denied_tag = discord.utils.get(
+            thread.parent.available_tags, name=THREAD_TAGS["Denied"])
 
         if outcome == "Approved" and approved_tag and approved_tag not in thread.applied_tags:
             await thread.edit(applied_tags=thread.applied_tags + [approved_tag])
@@ -259,7 +283,8 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         )
 
     except discord.NotFound:
-        logger.error(f"Vote message not found for request {request.thread_id}.")
+        logger.error(
+            f"Vote message not found for request {request.thread_id}.")
     except discord.HTTPException as e:
         logger.error(f"Failed to edit vote message: {e}")
 
@@ -303,7 +328,8 @@ async def end_vote(view: VoteView):
         role = discord.utils.get(guild.roles, name=request.role)
 
         if not role:
-            logger.error(f"Error: Role '{request.role}' not found in the server.")
+            logger.error(
+                f"Error: Role '{request.role}' not found in the server.")
             await thread.send(f"Error: Role '{request.role}' not found in the server.")
             await _finish_vote(thread, request)
             return
@@ -312,13 +338,15 @@ async def end_vote(view: VoteView):
         member = guild.get_member(view.thread_owner.id) or await guild.fetch_member(view.thread_owner.id)
 
         if not member:
-            logger.error(f"Error: Member '{view.thread_owner.mention}' not found in the server.")
+            logger.error(
+                f"Error: Member '{view.thread_owner.mention}' not found in the server.")
             await thread.send(f"Error: Member '{view.thread_owner.mention}' not found in the server.")
             await _finish_vote(thread, request)
             return
 
         # Add the role to the user if possible
-        logger.info(f"Adding role '{request.role}' to {view.thread_owner.mention}...")
+        logger.info(
+            f"Adding role '{request.role}' to {view.thread_owner.mention}...")
         if member.id == member.guild.owner_id:
             logger.error("Error: Cannot modify roles of the server owner.")
             await thread.send(f"Error: Cannot modify roles of the server owner, {view.thread_owner.mention}.")
@@ -362,7 +390,8 @@ async def on_ready():
         thread_title = request.title
         thread_id = request.thread_id
         end_time = request.end_time
-        bot.add_view(view=VoteView(thread_owner, thread_id, thread_title, end_time), message_id=request.bot_message_id)
+        bot.add_view(view=VoteView(thread_owner, thread_id,
+                     thread_title, end_time), message_id=request.bot_message_id)
 
     logger.info("Loaded all active role requests!")
 
@@ -390,7 +419,8 @@ async def _init_request(thread: discord.Thread):
     try:
         # Can throw ValueError if the role in the title is invalid
         # Won't throw if the role was found in the tags
-        app.add_request(thread.owner_id, thread_id, thread_title, end_time, role)
+        app.add_request(thread.owner_id, thread_id,
+                        thread_title, end_time, role)
     except ValueError as e:
         await thread.send(f"Error when creating role request: {e}")
         logger.error(f"Error when creating role request: {e}")
@@ -405,7 +435,8 @@ async def _init_request(thread: discord.Thread):
     # People can't apply for a role they already have
     if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
         await thread.send(f"Error: You already have the role {request.role}.")
-        logger.error(f"{owner.mention} tried to create a request for {request.role} but they already have it.")
+        logger.error(
+            f"{owner.mention} tried to create a request for {request.role} but they already have it.")
         app.remove_request(thread_id)
         return
 
@@ -443,7 +474,8 @@ async def _init_request(thread: discord.Thread):
 
     app.update_bot_message_id(thread_id, vote_message.id)
 
-    logger.info(f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'.")
+    logger.info(
+        f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'.")
 
 
 @bot.event
@@ -546,7 +578,8 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "
         return
 
     # Get the view
-    view = next((v for v in bot.persistent_views if v.thread_id == thread.id), None)
+    view = next(
+        (v for v in bot.persistent_views if v.thread_id == thread.id), None)
     if view is None:
         await ctx.respond("This thread is not currently being voted on.", ephemeral=True)
         return
@@ -572,27 +605,32 @@ thresholds_str = "\n".join(
     + ", ".join(
         [
             role  # List the roles
-            for role, percent2 in ACCEPTANCE_THRESHOLDS.items()  # Iterate over the acceptance thresholds
+            # Iterate over the acceptance thresholds
+            for role, percent2 in ACCEPTANCE_THRESHOLDS.items()
             if percent1 == percent2  # Match roles with the same threshold
         ]
     )
-    for percent1 in set(sorted(ACCEPTANCE_THRESHOLDS.values()))  # Ensure unique and sorted thresholds
+    # Ensure unique and sorted thresholds
+    for percent1 in set(sorted(ACCEPTANCE_THRESHOLDS.values()))
 )
 
 # Create a dictionary of roles and their vote weights, including only valid roles and "Excelsior"
 relevant_roles = {
     role: weight  # Map each role to its weight
     for role, weight in ROLE_VOTES.items()  # Iterate over the role votes
-    if role in VALID_ROLES or role == "Excelsior"  # Include only valid roles or "Excelsior"
+    # Include only valid roles or "Excelsior"
+    if role in VALID_ROLES or role == "Excelsior"
 }
 
 # Create a string that lists the vote weights and the roles associated with each weight
 vote_weights_str = "\n".join(
     f"{weight1}: "  # Convert the weight to a string
     + ", ".join(
-        [role for role, weight2 in relevant_roles.items() if weight1 == weight2]  # List roles with the same weight
+        # List roles with the same weight
+        [role for role, weight2 in relevant_roles.items() if weight1 == weight2]
     )
-    for weight1 in set(sorted(relevant_roles.values()))  # Ensure unique and sorted weights
+    # Ensure unique and sorted weights
+    for weight1 in set(sorted(relevant_roles.values()))
 )
 
 # Create a string that lists the roles where vote weight is ignored
