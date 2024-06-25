@@ -3,6 +3,8 @@ import discord
 import os
 import dotenv
 import logging
+import matplotlib.pyplot as plt
+import io
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime, timezone
@@ -204,14 +206,10 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         file = None
 
         if total_votes > 0:
-            import matplotlib.pyplot as plt
-            import io
-
             # Create a pie chart
             fig, ax = plt.subplots()
             ax.pie([yes_votes, no_votes], labels=['Yes', 'No'], colors=['green', 'red'],
                    autopct='%1.1f%%', startangle=90, textprops={'color': 'w', 'size': 'x-large'})
-            # Equal aspect ratio ensures that pie is drawn as a circle.
             ax.axis('equal')
 
             # Save the plot to a BytesIO object with a transparent background
@@ -263,7 +261,9 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             embed.add_field(name="", value="No votes cast.", inline=False)
             await vote_message.edit(content=None, embed=embed, view=None)
 
-        # Add the tag "Approved" or "Denied" to the thread, then close it.
+        logger.info("Edited vote message.")
+
+        # Add the tag "Approved" or "Denied" to the thread, then close it
         approved_tag = discord.utils.get(
             thread.parent.available_tags, name=THREAD_TAGS["Approved"])
         denied_tag = discord.utils.get(
@@ -287,6 +287,8 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
             f"Vote message not found for request {request.thread_id}.")
     except discord.HTTPException as e:
         logger.error(f"Failed to edit vote message: {e}")
+    except Exception as e:
+        logger.exception(f"Failed to edit vote message: {e}")
 
 
 # Can't actually be part of the VoteView class for some reason...
@@ -299,9 +301,9 @@ async def end_vote(view: VoteView):
         view (VoteView): The VoteView instance.
     """
 
-    logger.info(f"# Ending vote with thread id '{view.thread_id}'\n")
     view.check_time.stop()
     request: RoleRequest = app.get_request(view.thread_id)
+    logger.info(f"# Ending vote with thread id '{view.thread_id}': \"{request.title}\"\n")
 
     # Delete the role request from the active list
     app.remove_request(view.thread_id)
@@ -362,10 +364,13 @@ async def end_vote(view: VoteView):
 
     except discord.Forbidden:
         logger.critical("Error: Bot does not have permission to add roles.")
-        await thread.send(f"Error: Bot does not have permission to add roles, {view.thread_owner.mention}.")
+        await thread.send("Error: Bot does not have permission to add roles.")
     except discord.HTTPException as e:
         logger.error(f"Failed to add role due to an error: {e}")
-        await thread.send(f"Failed to add role due to an error: {e}, {view.thread_owner.mention}.")
+        await thread.send(f"Failed to add role due to an error: {e}.")
+    except Exception as e:
+        logger.exception(f"Failed to add role due to an error: {e}")
+        await thread.send(f"Failed to add role due to an error: {e}.")
 
     except asyncio.exceptions.CancelledError:
         # Weird occurance, but thread.send *almost* always causes this even when it works
