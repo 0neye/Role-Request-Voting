@@ -21,6 +21,7 @@ from config import (
     THREAD_TAGS,
     VALID_ROLES,
     LOG_FILE_NAME,
+    CLOSE_POST,
 )
 from app import RequestsManager
 from request import RoleRequest
@@ -184,7 +185,7 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
     Finish the voting process and display the results.
     Edits thread tags and original voting prompt message.
     Closes and locks thread.
-    Dependent on 'THREAD_TAGS' constant in config.
+    Dependent on 'THREAD_TAGS' and 'CLOSE_POST' constants in config.
 
     Args:
         thread (discord.Thread): The thread where the vote took place.
@@ -274,7 +275,9 @@ async def _finish_vote(thread: discord.Thread, request: RoleRequest):
         elif outcome == "Denied" and denied_tag and denied_tag not in thread.applied_tags:
             await thread.edit(applied_tags=thread.applied_tags + [denied_tag])
 
-        await thread.edit(archived=True, locked=True)
+        # Close and lock the thread
+        if CLOSE_POST:
+            await thread.edit(archived=True, locked=True)
 
         # Log the result
         logger.info(
