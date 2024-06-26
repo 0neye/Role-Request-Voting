@@ -94,7 +94,7 @@ THREAD_TAGS = {"Approved": "Approved", "Denied": "Denied"}
 
 VOTE_TIME_PERIOD = (60 * 60 * 24 * 7)  # 7 days in seconds
 CHECK_TIME = 60  # how often you want to check if the voting period has ended; in seconds
-
+CLOSE_POST = False  # if true, the bot will close the post after the voting period ends
 
 CHANNEL_ID = 1101149194498089051  # Forum channel ID
 STATE_FILE_NAME = "requests_state.json"
