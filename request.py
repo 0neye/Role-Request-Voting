@@ -89,6 +89,31 @@ class RoleRequest:
             self.yes_votes.append((user_id, votes))
         
         self._update_usercount()
+    
+    def vote_or_change(self, user_id: int, new_votes: int):
+        """
+        Vote on the role request, or change an existing vote.
+
+        Args:
+            user_id (int): The ID of the user voting or changing their vote.
+            new_votes (int): The new number of votes. Negative are "no" votes.
+        """
+
+        if self.has_voted(user_id):
+            self.yes_votes = [vote for vote in self.yes_votes if vote[0] != user_id]
+            self.no_votes = [vote for vote in self.no_votes if vote[0] != user_id]
+        self.vote(user_id, new_votes)
+
+    def remove_vote(self, user_id: int):
+        """
+        Remove a user's vote from the role request.
+
+        Args:
+            user_id (int): The ID of the user whose vote should be removed.
+        """
+        self.yes_votes = [vote for vote in self.yes_votes if vote[0] != user_id]
+        self.no_votes = [vote for vote in self.no_votes if vote[0] != user_id]
+        self._update_usercount()
 
     def get_votes(self):
         """
@@ -117,20 +142,6 @@ class RoleRequest:
             bool: True if the user has voted, False otherwise.
         """
         return user_id in [vote[0] for vote in self.yes_votes + self.no_votes]
-
-    def change_vote(self, user_id: int, new_votes: int):
-        """
-        Change an existing vote (or add a new one).
-
-        Args:
-            user_id (int): The ID of the user changing their vote.
-            new_votes (int): The new number of votes. Negative are "no" votes.
-        """
-
-        if self.has_voted(user_id):
-            self.yes_votes = [vote for vote in self.yes_votes if vote[0] != user_id]
-            self.no_votes = [vote for vote in self.no_votes if vote[0] != user_id]
-        self.vote(user_id, new_votes)
 
     def result(self):
         """
