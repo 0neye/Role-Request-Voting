@@ -2,6 +2,7 @@ import os
 from request import RoleRequest
 import json
 from config import STATE_FILE_NAME
+from typing import Optional
 
 
 class RequestsManager:
@@ -83,7 +84,7 @@ class RequestsManager:
         except KeyError:
             raise ValueError("Invalid request ID.")
 
-    def get_request(self, request_id: int) -> RoleRequest | None:
+    def get_request(self, request_id: int) -> Optional[RoleRequest]:
         """
         Get a role request by its ID.
 
