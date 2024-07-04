@@ -84,12 +84,14 @@ class VoteView(discord.ui.View):
     @discord.ui.button(label="Yes", style=discord.ButtonStyle.success, custom_id="vote_yes")
     async def yes_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "yes")
-        await self._update_displayed_member_count()
 
     @discord.ui.button(label="No", style=discord.ButtonStyle.danger, custom_id="vote_no")
     async def no_button_callback(self, button, interaction):
         await self.handle_vote(interaction, "no")
-        await self._update_displayed_member_count()
+
+    @discord.ui.button(label="Cancel My Vote", style=discord.ButtonStyle.gray, custom_id="cancel_vote")
+    async def cancel_button_callback(self, button, interaction):
+        await self.cancel_vote(interaction)
 
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         """
@@ -107,24 +109,62 @@ class VoteView(discord.ui.View):
             await interaction.response.send_message("You can't vote on your own request!", ephemeral=True)
             return
 
-        request = app.get_request(self.thread_id)
-        vote_changed = request.has_voted(user.id)
+        try:
+            request = app.get_request(self.thread_id)
+            vote_changed = request.has_voted(user.id)
 
-        role_votes = self._get_user_votes(user, request)
+            role_votes = self._get_user_votes(user, request)
 
-        # Negate are 'no' votes, positive are 'yes'
-        app.vote_on_request(self.thread_id, user.id,
-                            role_votes * (-1 if vote_type == "no" else 1))
-        if vote_changed:
-            await interaction.response.send_message(
-                f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.response.send_message(
-                f"You voted {vote_type.capitalize()} with {role_votes} votes.",
-                ephemeral=True,
-            )
+            # Negate are 'no' votes, positive are 'yes'
+            app.vote_on_request(self.thread_id,
+                                    user.id, role_votes * (-1 if vote_type == "no" else 1))
+            await self._update_displayed_member_count()
+
+            if vote_changed:
+                await interaction.respond(
+                    f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.respond(
+                    f"You voted {vote_type.capitalize()} with {role_votes} votes.",
+                    ephemeral=True,
+                )
+
+        except Exception as e:
+            logger.error(f"Unexpected error handling vote for user {user.id} in thread {self.thread_id}: {str(e)}")
+            await interaction.respond("An unexpected error occurred.", ephemeral=True)
+
+    async def cancel_vote(self, interaction: discord.Interaction):
+        """
+        Cancels the users vote.
+
+        Args:
+            interaction (discord.Interaction): The interaction that triggered the cancel.
+        """
+
+        thread_id = self.thread_id
+        user_id = interaction.user.id
+
+        try:
+            # Get the request
+            request = app.get_request(thread_id)
+
+            # Make sure they've voted
+            if not request.has_voted(user_id):
+                await interaction.respond("You haven't voted on this request yet.", ephemeral=True)
+                return
+            
+            # Remove the vote
+            app.remove_vote_on_request(thread_id, user_id)
+            await self._update_displayed_member_count()
+
+            # Respond
+            await interaction.respond("Your vote has been cancelled.", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Unexpected error cancelling vote for user {user_id} in thread {thread_id}: {str(e)}")
+            await interaction.respond("An unexpected error occurred.", ephemeral=True)
 
     def _get_user_votes(self, user: discord.Member, request: RoleRequest):
         """
@@ -157,7 +197,7 @@ class VoteView(discord.ui.View):
         thread = bot.get_channel(self.thread_id)
         request = app.get_request(self.thread_id)
         vote_message_id = request.bot_message_id
-        vote_message = await thread.fetch_message(vote_message_id)
+        vote_message = bot.get_message(vote_message_id) or await thread.fetch_message(vote_message_id)
 
         # Edit the member count on the embed
         embed = vote_message.embeds[0]
@@ -430,8 +470,8 @@ async def _init_request(thread: discord.Thread):
         app.add_request(thread.owner_id, thread_id,
                         thread_title, end_time, role)
     except ValueError as e:
-        await thread.send(f"Error when creating role request: {e}")
         logger.error(f"Error when creating role request: {e}")
+        await thread.send(f"Error when creating role request: {e}")
         return
 
     # Bunch of work needed to check roles below
@@ -442,10 +482,10 @@ async def _init_request(thread: discord.Thread):
 
     # People can't apply for a role they already have
     if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
-        await thread.send(f"Error: You already have the role {request.role}.")
         logger.error(
             f"{owner.mention} tried to create a request for {request.role} but they already have it.")
         app.remove_request(thread_id)
+        await thread.send(f"Error: You already have the role {request.role}.")
         return
 
     # Finally construct the view
@@ -551,6 +591,12 @@ async def create_vote(ctx):
     if thread is None:
         return
 
+    # Check if a request is created for this thread
+    if app.get_request(thread.id) is not None:
+        await ctx.respond("This thread already has a running vote.", ephemeral=True)
+        return
+    
+    # Create the request and vote
     await _init_request(thread)
 
     await ctx.respond("Vote created.", ephemeral=True)
@@ -664,6 +710,7 @@ After a set amount of time, the bot will show the results of the poll and automa
 {vote_weight_ignored_str}
 """
 
+# Unrestricted Commands
 
 @bot.command(description="Instructions for using bot, and praovides a link to source code")
 async def help(ctx):
@@ -678,6 +725,56 @@ async def ping(ctx):
     latency = bot.latency
     latency_ms = latency * 1000
     await ctx.respond(f"`Ping: {latency_ms:.2f}ms`")
+
+
+@bot.command(description="Votes on this request.")
+async def vote_on_request(ctx, vote: discord.Option(str, choices=["Yes", "No"])):
+    """
+    Votes on the current role request thread.
+    This command can only be used in a role request thread.
+    Dependent on 'CHANNEL_ID' constant in config.
+
+    Args:
+        ctx (discord.ApplicationContext): The context of the command invocation.
+        vote (str): The vote to cast, either "Yes" or "No".
+    """
+    # Check if the command is used in a thread
+    if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
+        await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
+        return
+
+    # Get the view and call the appropriate handle_vote function
+    view: VoteView = next((v for v in bot.persistent_views if v.thread_id == ctx.channel.id), None)
+    if view:
+        await view.handle_vote(ctx.interaction, vote.lower())
+    else:
+        logger.warning(f"VoteView not found for thread {ctx.channel.id}")
+        await ctx.respond("An error occurred while processing your vote.", ephemeral=True)
+
+
+@bot.command(description="Cancels your vote on this request.")
+async def cancel_my_vote(ctx):
+    """
+    Cancels the user's vote on the current role request thread.
+    This command can only be used in a role request thread.
+    Dependent on 'CHANNEL_ID' constant in config.
+
+    Args:
+        ctx (discord.ApplicationContext): The context of the command invocation.
+    """
+    # Check if the command is used in a thread
+    if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
+        await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
+        return
+    
+    # Get the view and call the appropriate cancel_vote function
+    view: VoteView = next((v for v in bot.persistent_views if v.thread_id == ctx.channel.id), None)
+    if view:
+        await view.cancel_vote(ctx.interaction)
+    else:
+        logger.warning(f"VoteView not found for thread {ctx.channel.id}")
+        await ctx.respond("An error occurred while processing your vote.", ephemeral=True)
+
 
 
 dotenv.load_dotenv()

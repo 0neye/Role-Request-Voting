@@ -63,12 +63,27 @@ class RequestsManager:
 
         try:
             # Uses change_vote so this function can do double duty
-            self.requests[request_id].change_vote(user_id, votes)
+            self.requests[request_id].vote_or_change(user_id, votes)
+            self.save_state()
+        except KeyError:
+            raise ValueError("Invalid request ID.")
+    
+    def remove_vote_on_request(self, request_id: int, user_id: int):
+        """
+        Remove a user's vote from a role request.
+
+        Args:
+            request_id (int): The ID of the request.
+            user_id (int): The ID of the user whose vote should be removed.
+        """
+
+        try:
+            self.requests[request_id].remove_vote(user_id)
             self.save_state()
         except KeyError:
             raise ValueError("Invalid request ID.")
 
-    def get_request(self, request_id: int) -> RoleRequest:
+    def get_request(self, request_id: int) -> RoleRequest | None:
         """
         Get a role request by its ID.
 
@@ -76,13 +91,13 @@ class RequestsManager:
             request_id (int): The ID of the request.
 
         Returns:
-            RoleRequest: The role request object.
+            RoleRequest | None: The role request object or None if not found.
         """
 
         try:
             return self.requests[request_id]
         except KeyError:
-            raise ValueError("Invalid request ID.")
+            return None
 
     def remove_request(self, request_id: int):
         """
