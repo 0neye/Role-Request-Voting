@@ -102,6 +102,7 @@ PROMPT_YES_VOTERS_FOR_FEEDBACK = False # whether to prompt people voting 'yes' f
 PROMPT_AFTER_FIRST_FEEDBACK = True # whether to only prompt people until someone submits feedback, or keep prompting everyone
 
 CHANNEL_ID = 1101149194498089051  # Forum channel ID
+MOD_LOG_CHANNEL_ID = 546319957827518474  # Channel for moderation logs
 STATE_FILE_NAME = "requests_state.json"
 LOG_FILE_NAME = "requests_log.txt"
 DEV_MODE = False  # for ease of testing, turns off many checks

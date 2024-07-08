@@ -13,6 +13,7 @@ from config import (
     CHECK_TIME,
     DEFAULT_VOTE,
     IGNORE_VOTE_WEIGHT,
+    MOD_LOG_CHANNEL_ID,
     PROMPT_AFTER_FIRST_FEEDBACK,
     PROMPT_NO_VOTERS_FOR_FEEDBACK,
     PROMPT_YES_VOTERS_FOR_FEEDBACK,
@@ -123,9 +124,9 @@ class VoteView(discord.ui.View):
             user_submitted_feedback = request.has_submitted_feedback(user.id)
             prompt = f"\n\n{user.mention} Would you like to{' be the first to' if not request_has_feedback else ''} " \
             "submit anonymous feedback for this request?\nJust do `/submit_request_feedback` in this channel." \
-                if (vote_type == "no" and PROMPT_NO_VOTERS_FOR_FEEDBACK \
-                or vote_type == "yes" and PROMPT_YES_VOTERS_FOR_FEEDBACK) \
-                and not request_has_feedback or PROMPT_AFTER_FIRST_FEEDBACK \
+                if (vote_type == "no" and PROMPT_NO_VOTERS_FOR_FEEDBACK) \
+                or (vote_type == "yes" and PROMPT_YES_VOTERS_FOR_FEEDBACK) \
+                and (not request_has_feedback or PROMPT_AFTER_FIRST_FEEDBACK) \
                 and not user_submitted_feedback \
                 else ""
 
@@ -667,6 +668,83 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "
         await ctx.respond(f"Vote ended early by {ctx.user.mention}.")
 
     await end_vote(view)
+
+@bot.command(description="Show all voting data for this request. Requires moderator or Paragon roles. This is logged.")
+async def show_votes(ctx):
+    """
+    Show all voting data for the current request.
+    Dependent on the 'COMMAND_WHITELISTED_ROLES' and 'MOD_LOG_CHANNEL' constants in config.
+
+    Args:
+        ctx (discord.ext.commands.Context): The context of the command.
+    """
+
+    # Get the thread
+    thread = await _restricted_cmd_ctx_to_thread(ctx)
+    if thread is None:
+        return
+
+    # Get the request
+    request = app.get_request(thread.id)
+    if request is None:
+        await ctx.respond("This thread is not a role request.", ephemeral=True)
+        return
+
+    # Log command use to moderation log channel
+    if MOD_LOG_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(MOD_LOG_CHANNEL_ID) or await bot.fetch_channel(MOD_LOG_CHANNEL_ID)
+            await channel.send(f"{ctx.user.mention} used the 'show_votes' command in {thread.mention} to show voting data.")
+        except Exception as e:
+            logger.error(e)
+            ctx.respond("Failed to log command use to moderation log channel.", ephemeral=True)
+            return
+
+    # Create an embed to display voting data
+    embed = discord.Embed(title=f"Voting Data for {request.role} Request", color=discord.Color.blue())
+    embed.description = f"**Request Title:** {request.title}\n**Requester:** <@{request.user_id}>"
+    _guild: discord.Guild = ctx.guild
+
+    # Get the vote data
+    vote_data = []
+    for vote_list, vote_type in [(request.yes_votes, "Yes"), (request.no_votes, "No")]:
+        for user_id, vote_count in vote_list:
+            member = _guild.get_member(user_id) or (await _guild.fetch_member(user_id))
+            display_name = member.display_name if member else f"Unknown User ({user_id})"
+            vote_data.append((display_name, vote_type, vote_count))
+
+    # Sort vote data by display number of votes
+    vote_data.sort(key=lambda x: x[2])
+
+    # Create the table
+    table = "```\nUser            | Vote | Count\n" + "-" * 30 + "\n"
+    for display_name, vote_type, vote_count in vote_data:
+        table += f"{display_name[:15]:<15} | {vote_type:<4} | {vote_count}\n"
+    table += "```"
+    embed.add_field(name="Votes", value=table, inline=False)
+
+    # Add vote totals
+    yes_count, no_count = request.get_votes()
+    embed.add_field(name="Vote Totals", value=f"Yes: {yes_count}\nNo: {no_count}", inline=False)
+
+    # Add feedback if any
+    if request.feedback:
+        name = _guild.get_member(user_id).display_name or (await _guild.fetch_member(user_id)).display_name
+        feedback_text = "\n".join([f"• {name}: {feedback}" for user_id, feedback in request.feedback])
+        embed.add_field(name="Feedback", value=feedback_text, inline=False)
+    else:
+        embed.add_field(name="Feedback", value="No feedback submitted", inline=False)
+
+    # Add veto information if any
+    # if request.veto:
+    #     veto_user_id, veto_result = request.veto
+    #     veto_member = _guild.get_member(veto_user_id) or await _guild.fetch_member(veto_user_id)
+    #     veto_display_name = veto_member.display_name if veto_member else f"Unknown User ({veto_user_id})"
+    #     veto_text = f"Veto by {veto_display_name}: {'Approved' if veto_result else 'Denied'}"
+    #     embed.add_field(name="Veto", value=veto_text, inline=False)
+    
+    # Send the embed
+    await ctx.respond(content="Command use logged.", embed=embed, ephemeral=True)
 
 
 # Bunch of setup for the help command
