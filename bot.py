@@ -9,14 +9,14 @@ from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime, timezone
 from config import (
-    ACCEPTANCE_THRESHOLDS,
     CHECK_TIME,
     DEFAULT_VOTE,
-    IGNORE_VOTE_WEIGHT,
+    PROMPT_AFTER_FIRST_FEEDBACK,
+    PROMPT_NO_VOTERS_FOR_FEEDBACK,
+    PROMPT_YES_VOTERS_FOR_FEEDBACK,
     VOTE_TIME_PERIOD,
     ROLE_VOTES,
     CHANNEL_ID,
-    COMMAND_WHITELISTED_ROLES,
     DEV_MODE,
     THREAD_TAGS,
     VALID_ROLES,
@@ -26,7 +26,6 @@ from config import (
 from app import RequestsManager
 from request import RoleRequest
 
-
 # SETUP AND INITIALIZATION
 
 bot = discord.Bot()
@@ -34,25 +33,33 @@ app = RequestsManager()
 app.load_state()
 
 # Configure logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
-file_handler = logging.FileHandler(LOG_FILE_NAME)
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s - %(levelname)s - %(message)s"))
 
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter(
-    "%(asctime)s - %(levelname)s - %(message)s"))
+def setup_logger():
+    logger = logging.getLogger('bot_logger')
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
 
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+        file_handler = logging.FileHandler(LOG_FILE_NAME)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s"))
+
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s"))
+
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+    return logger
+
+
+logger = setup_logger()
 
 
 ####################################
-
 
 class VoteView(discord.ui.View):
     def __init__(
@@ -96,6 +103,8 @@ class VoteView(discord.ui.View):
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         """
         Handle a vote interaction.
+        Dependant on the 'PROMPT_NO_VOTERS_FOR_FEEDBACK', 'PROMPT_YES_VOTERS_FOR_FEEDBACK', 
+        and 'PROMPT_AFTER_FIRST_FEEDBACK' constants in config.py
 
         Args:
             interaction (discord.Interaction): The interaction that triggered the vote.
@@ -113,26 +122,38 @@ class VoteView(discord.ui.View):
             request = app.get_request(self.thread_id)
             vote_changed = request.has_voted(user.id)
 
+            # Handle feedback prompt
+            request_has_feedback = len(request.feedback) > 0
+            user_submitted_feedback = request.has_submitted_feedback(user.id)
+            prompt = f"\n\n{user.mention} Would you like to{' be the first to' if not request_has_feedback else ''} " \
+                "submit anonymous feedback for this request?\nJust do `/submit_request_feedback` in this channel." \
+                if (vote_type == "no" and PROMPT_NO_VOTERS_FOR_FEEDBACK) \
+                or (vote_type == "yes" and PROMPT_YES_VOTERS_FOR_FEEDBACK) \
+                and (not request_has_feedback or PROMPT_AFTER_FIRST_FEEDBACK) \
+                and not user_submitted_feedback \
+                else ""
+
             role_votes = self._get_user_votes(user, request)
 
             # Negate are 'no' votes, positive are 'yes'
             app.vote_on_request(self.thread_id,
-                                    user.id, role_votes * (-1 if vote_type == "no" else 1))
+                                user.id, role_votes * (-1 if vote_type == "no" else 1))
             await self._update_displayed_member_count()
 
             if vote_changed:
                 await interaction.respond(
-                    f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.",
+                    f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes." + prompt,
                     ephemeral=True,
                 )
             else:
                 await interaction.respond(
-                    f"You voted {vote_type.capitalize()} with {role_votes} votes.",
+                    f"You voted {vote_type.capitalize()} with {role_votes} votes." + prompt,
                     ephemeral=True,
                 )
 
         except Exception as e:
-            logger.error(f"Unexpected error handling vote for user {user.id} in thread {self.thread_id}: {str(e)}")
+            logger.error(
+                f"Unexpected error handling vote for user {user.id} in thread {self.thread_id}: {str(e)}")
             await interaction.respond("An unexpected error occurred.", ephemeral=True)
 
     async def cancel_vote(self, interaction: discord.Interaction):
@@ -154,7 +175,7 @@ class VoteView(discord.ui.View):
             if not request.has_voted(user_id):
                 await interaction.respond("You haven't voted on this request yet.", ephemeral=True)
                 return
-            
+
             # Remove the vote
             app.remove_vote_on_request(thread_id, user_id)
             await self._update_displayed_member_count()
@@ -163,7 +184,8 @@ class VoteView(discord.ui.View):
             await interaction.respond("Your vote has been cancelled.", ephemeral=True)
 
         except Exception as e:
-            logger.error(f"Unexpected error cancelling vote for user {user_id} in thread {thread_id}: {str(e)}")
+            logger.error(
+                f"Unexpected error cancelling vote for user {user_id} in thread {thread_id}: {str(e)}")
             await interaction.respond("An unexpected error occurred.", ephemeral=True)
 
     def _get_user_votes(self, user: discord.Member, request: RoleRequest):
@@ -346,10 +368,11 @@ async def end_vote(view: VoteView):
 
     view.check_time.stop()
     request: RoleRequest = app.get_request(view.thread_id)
-    logger.info(f"# Ending vote with thread id '{view.thread_id}': \"{request.title}\"\n")
+    logger.info(
+        f"# Ending vote with thread id '{view.thread_id}': \"{request.title}\"\n")
 
-    # Delete the role request from the active list
-    app.remove_request(view.thread_id)
+    # Remove the role request from the active list
+    app.close_request(view.thread_id)
 
     # Get the current thread
     thread = bot.get_channel(view.thread_id) or await bot.fetch_channel(view.thread_id)
@@ -540,244 +563,15 @@ async def on_thread_create(thread: discord.Thread):
         await _init_request(thread)
 
 
-async def _restricted_cmd_ctx_to_thread(ctx) -> discord.Thread:
-    """
-    Performs basic checks for restricted commands and returns the thread if valid.
-
-    Args:
-        ctx (discord.ext.commands.Context): The context of the command.
-
-    Returns:
-        discord.Thread | None
-    """
-
-    # Make sure they have the perms
-    for role in ctx.user.roles:
-        if role.name in COMMAND_WHITELISTED_ROLES or DEV_MODE:
-            break
-    else:
-        await ctx.respond("You don't have permission to do that.", ephemeral=True)
-        return
-
-    # Get the thread
-    thread = ctx.channel
-    if not isinstance(thread, discord.Thread):
-        await ctx.respond("This command can only be used in a thread.", ephemeral=True)
-        return
-
-    # Check if it's a valid thread in the correct forum channel
-    if thread.parent.id != CHANNEL_ID:
-        await ctx.respond(
-            "This command can only be used in the role requests forum channel.",
-            ephemeral=True,
-        )
-        return
-
-    return thread
-
-
-@bot.command(description="Manually create a vote in this thread. Requires moderator or Paragon roles.")
-async def create_vote(ctx):
-    """
-    Manually creates a vote in the current thread.
-    Dependent on 'COMMAND_WHITELISTED_ROLES' constant in config.
-
-    Args:
-        ctx (discord.ext.commands.Context): The context of the command.
-    """
-
-    # Get the thread
-    thread = await _restricted_cmd_ctx_to_thread(ctx)
-    if thread is None:
-        return
-
-    # Check if a request is created for this thread
-    if app.get_request(thread.id) is not None:
-        await ctx.respond("This thread already has a running vote.", ephemeral=True)
-        return
-    
-    # Create the request and vote
-    await _init_request(thread)
-
-    await ctx.respond("Vote created.", ephemeral=True)
-
-
-@bot.command(
-    description="End the vote in this thread early. Requires moderator or Paragon roles.",
-)
-async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "Deny", "Abstain"])):
-    """
-    End the vote in the current thread early.
-    Dependent on 'COMMAND_WHITELISTED_ROLES' constant in config.
-
-    Args:
-        ctx (discord.ApplicationContext): The context of the command.
-        outcome (str): The outcome of the vote ("Approve", "Deny" or "Abstain").
-    """
-
-    # Get the thread
-    thread = await _restricted_cmd_ctx_to_thread(ctx)
-    if thread is None:
-        return
-
-    # Get the request
-    request = app.get_request(thread.id)
-    if request is None:
-        await ctx.respond("This thread is not a role request.", ephemeral=True)
-        return
-
-    # Stop moderator abuse
-    if ctx.user.id == request.user_id and not DEV_MODE:
-        await ctx.respond("You can't end your own vote.", ephemeral=True)
-        return
-
-    # Get the view
-    view = next(
-        (v for v in bot.persistent_views if v.thread_id == thread.id), None)
-    if view is None:
-        await ctx.respond("This thread is not currently being voted on.", ephemeral=True)
-        return
-
-    # End the vote
-    if outcome != "Abstain":
-        # If they veto
-        await ctx.respond(f"Vote ended early by {ctx.user.mention} with outcome: {outcome}")
-
-        res = True if outcome == "Approve" else False
-        request.veto = (ctx.user.id, res)
-    else:
-        # If they don't veto
-        await ctx.respond(f"Vote ended early by {ctx.user.mention}.")
-
-    await end_vote(view)
-
-
-# Bunch of setup for the help command
-# Create a string that lists the acceptance thresholds and the roles associated with each threshold
-thresholds_str = "\n".join(
-    f"{percent1 * 100}%: "  # Convert the threshold to a percentage string
-    + ", ".join(
-        [
-            role  # List the roles
-            # Iterate over the acceptance thresholds
-            for role, percent2 in ACCEPTANCE_THRESHOLDS.items()
-            if percent1 == percent2  # Match roles with the same threshold
-        ]
-    )
-    # Ensure unique and sorted thresholds
-    for percent1 in set(sorted(ACCEPTANCE_THRESHOLDS.values()))
-)
-
-# Create a dictionary of roles and their vote weights, including only valid roles and "Excelsior"
-relevant_roles = {
-    role: weight  # Map each role to its weight
-    for role, weight in ROLE_VOTES.items()  # Iterate over the role votes
-    # Include only valid roles or "Excelsior"
-    if role in VALID_ROLES or role == "Excelsior"
-}
-
-# Create a string that lists the vote weights and the roles associated with each weight
-vote_weights_str = "\n".join(
-    f"{weight1}: "  # Convert the weight to a string
-    + ", ".join(
-        # List roles with the same weight
-        [role for role, weight2 in relevant_roles.items() if weight1 == weight2]
-    )
-    # Ensure unique and sorted weights
-    for weight1 in set(sorted(relevant_roles.values()))
-)
-
-# Create a string that lists the roles where vote weight is ignored
-vote_weight_ignored_str = "\n".join(f"{role}" for role in IGNORE_VOTE_WEIGHT)
-
-# Help command contents
-help_text = f"""
-# Role Voting Bot
-*This bot is under active development. Please provide feedback and keep in mind that not everything is finalized.*
-
-__Source code:__ <https://github.com/0neye/Role-Request-Voting>
-
-## How it works:
-Role Voting helps determine the outcome of an Excelsior role request using an anyonymous voting system.
-
-When a new thread is made in the role requests forum channel, it will send a message with *Yes* and *No* buttons. Select one of these buttons to cast your vote.
-After a set amount of time, the bot will show the results of the poll and automatically assign a role if enough people voted *Yes*.
-### Acceptance Threshold Percentages:
-{thresholds_str}
-### Vote Weights:
-{vote_weights_str}
-### Role Requests Where Vote Weight is Ignored:
-{vote_weight_ignored_str}
-"""
-
-# Unrestricted Commands
-
-@bot.command(description="Instructions for using bot, and praovides a link to source code")
-async def help(ctx):
-    """
-    Provide help instructions and a link to the source code.
-    """
-    await ctx.respond(help_text)
-
-
-@bot.command(description="Returns the latency of the bot in ms")
-async def ping(ctx):
-    latency = bot.latency
-    latency_ms = latency * 1000
-    await ctx.respond(f"`Ping: {latency_ms:.2f}ms`")
-
-
-@bot.command(description="Votes on this request.")
-async def vote_on_request(ctx, vote: discord.Option(str, choices=["Yes", "No"])):
-    """
-    Votes on the current role request thread.
-    This command can only be used in a role request thread.
-    Dependent on 'CHANNEL_ID' constant in config.
-
-    Args:
-        ctx (discord.ApplicationContext): The context of the command invocation.
-        vote (str): The vote to cast, either "Yes" or "No".
-    """
-    # Check if the command is used in a thread
-    if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
-        await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
-        return
-
-    # Get the view and call the appropriate handle_vote function
-    view: VoteView = next((v for v in bot.persistent_views if v.thread_id == ctx.channel.id), None)
-    if view:
-        await view.handle_vote(ctx.interaction, vote.lower())
-    else:
-        logger.warning(f"VoteView not found for thread {ctx.channel.id}")
-        await ctx.respond("An error occurred while processing your vote.", ephemeral=True)
-
-
-@bot.command(description="Cancels your vote on this request.")
-async def cancel_my_vote(ctx):
-    """
-    Cancels the user's vote on the current role request thread.
-    This command can only be used in a role request thread.
-    Dependent on 'CHANNEL_ID' constant in config.
-
-    Args:
-        ctx (discord.ApplicationContext): The context of the command invocation.
-    """
-    # Check if the command is used in a thread
-    if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
-        await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
-        return
-    
-    # Get the view and call the appropriate cancel_vote function
-    view: VoteView = next((v for v in bot.persistent_views if v.thread_id == ctx.channel.id), None)
-    if view:
-        await view.cancel_vote(ctx.interaction)
-    else:
-        logger.warning(f"VoteView not found for thread {ctx.channel.id}")
-        await ctx.respond("An error occurred while processing your vote.", ephemeral=True)
-
-
-
 dotenv.load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
+
+# Cogs
+cogs_list = [
+    'open_cmds',
+    'restricted_cmds'
+]
+for cog in cogs_list:
+    bot.load_extension(f'cogs.{cog}')
 
 bot.run(TOKEN)
