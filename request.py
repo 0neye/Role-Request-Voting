@@ -70,7 +70,7 @@ class RoleRequest:
         instance.bot_message_id = data.get("bot_message_id")
         instance.yes_votes = data.get("yes_votes") or []
         instance.no_votes = data.get("no_votes") or []
-        instance.feedback = data.get("anon_feedback") or []
+        instance.feedback = data.get("feedback") or []
         instance.num_users = data.get("num_users") or 0
         instance.veto = data.get("veto")
         instance.closed = data.get("closed") or int(instance.end_time) > int(datetime.now(timezone.utc).timestamp())
@@ -209,7 +209,7 @@ class RoleRequest:
             "role": self.role,
             "yes_votes": self.yes_votes,
             "no_votes": self.no_votes,
-            "anon_feedback": self.feedback,
+            "feedback": self.feedback,
             "num_users": self.num_users,
             "veto": self.veto,
             "closed": self.closed,

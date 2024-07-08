@@ -146,6 +146,12 @@ class OpenCmds(commands.Cog):
             await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
             return
 
+        # Make sure it's an active request
+        request = app.get_request(ctx.channel.id)
+        if request is None:
+            await ctx.respond("There is no active request in this thread.", ephemeral=True)
+            return
+        
         # Submit feedback internally
         app.submit_feedback(ctx.channel.id, ctx.user.id, feedback)
 
