@@ -73,7 +73,7 @@ class RoleRequest:
         instance.feedback = data.get("feedback") or []
         instance.num_users = data.get("num_users") or 0
         instance.veto = data.get("veto")
-        instance.closed = data.get("closed") or int(instance.end_time) > int(datetime.now(timezone.utc).timestamp())
+        instance.closed = data.get("closed") or int(instance.end_time) < int(datetime.now(timezone.utc).timestamp())
 
         return instance
 
