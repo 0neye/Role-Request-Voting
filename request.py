@@ -23,8 +23,9 @@ class RoleRequest:
         self.end_time: str = end_time
         self.bot_message_id = None
         self.role = role
-        self.yes_votes: list = []  # List of usernames, vote #
-        self.no_votes: list = []  # List of usernames, vote #
+        self.yes_votes: list = []  # List of (userid, vote #)
+        self.no_votes: list = []  # List of (userid, vote #)
+        self.feedback: list = [] # List of (userid, feedback)
         self.num_users: int = 0 # Number of users that cast a vote
 
         # (int, bool) = (user_id, veto); user being the one to make the veto
@@ -57,17 +58,19 @@ class RoleRequest:
         """
 
         instance = cls(
-            user_id=data["user_id"],
-            thread_id=data["thread_id"],
-            title=data["title"],
-            end_time=data["end_time"],
-            role = data["role"],
+            user_id=data.get("user_id"),
+            thread_id=data.get("thread_id"),
+            title=data.get("title"),
+            end_time=data.get("end_time"),
+            role=data.get("role"),
         )
-        instance.bot_message_id = data["bot_message_id"]
-        instance.yes_votes = data["yes_votes"]
-        instance.no_votes = data["no_votes"]
-        instance.num_users = data["num_users"]
-        instance.veto = data["veto"]
+        instance.bot_message_id = data.get("bot_message_id")
+        instance.yes_votes = data.get("yes_votes") or []
+        instance.no_votes = data.get("no_votes") or []
+        instance.feedback = data.get("anon_feedback") or []
+        instance.num_users = data.get("num_users") or 0
+        instance.veto = data.get("veto")
+
         return instance
 
     def vote(self, user_id: int, votes: int):
@@ -115,6 +118,17 @@ class RoleRequest:
         self.no_votes = [vote for vote in self.no_votes if vote[0] != user_id]
         self._update_usercount()
 
+    def submit_feedback(self, user_id: int, feedback: str):
+        """
+        Submit feedback for this role request.
+
+        Args:
+            user_id (int): The ID of the user submitting the feedback.
+            feedback (str): The feedback text.
+        """
+
+        self.feedback.append((user_id, feedback))
+
     def get_votes(self):
         """
         Get the total number of yes and no votes.
@@ -142,6 +156,18 @@ class RoleRequest:
             bool: True if the user has voted, False otherwise.
         """
         return user_id in [vote[0] for vote in self.yes_votes + self.no_votes]
+
+    def has_submitted_feedback(self, user_id: int):
+        """
+        Check if a user has submitted feedback.
+
+        Args:
+            user_id (int): The ID of the user.
+
+        Returns:
+            bool: True if the user has submitted feedback, False otherwise.
+        """
+        return user_id in [feedback[0] for feedback in self.feedback]
 
     def result(self):
         """
@@ -179,6 +205,7 @@ class RoleRequest:
             "role": self.role,
             "yes_votes": self.yes_votes,
             "no_votes": self.no_votes,
+            "anon_feedback": self.feedback,
             "num_users": self.num_users,
             "veto": self.veto,
         }

@@ -13,6 +13,9 @@ from config import (
     CHECK_TIME,
     DEFAULT_VOTE,
     IGNORE_VOTE_WEIGHT,
+    PROMPT_AFTER_FIRST_FEEDBACK,
+    PROMPT_NO_VOTERS_FOR_FEEDBACK,
+    PROMPT_YES_VOTERS_FOR_FEEDBACK,
     VOTE_TIME_PERIOD,
     ROLE_VOTES,
     CHANNEL_ID,
@@ -96,6 +99,8 @@ class VoteView(discord.ui.View):
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         """
         Handle a vote interaction.
+        Dependant on the 'PROMPT_NO_VOTERS_FOR_FEEDBACK', 'PROMPT_YES_VOTERS_FOR_FEEDBACK', 
+        and 'PROMPT_AFTER_FIRST_FEEDBACK' constants in config.py
 
         Args:
             interaction (discord.Interaction): The interaction that triggered the vote.
@@ -113,6 +118,18 @@ class VoteView(discord.ui.View):
             request = app.get_request(self.thread_id)
             vote_changed = request.has_voted(user.id)
 
+            # Handle feedback prompt
+            request_has_feedback = len(request.feedback) > 0
+            user_submitted_feedback = request.has_submitted_feedback(user.id)
+            prompt = f"\n\n{user.mention} Would you like to{' be the first to' if not request_has_feedback else ''} " \
+            "submit anonymous feedback for this request?\nJust do `/submit_request_feedback` in this channel." \
+                if (vote_type == "no" and PROMPT_NO_VOTERS_FOR_FEEDBACK \
+                or vote_type == "yes" and PROMPT_YES_VOTERS_FOR_FEEDBACK) \
+                and not request_has_feedback or PROMPT_AFTER_FIRST_FEEDBACK \
+                and not user_submitted_feedback \
+                else ""
+
+
             role_votes = self._get_user_votes(user, request)
 
             # Negate are 'no' votes, positive are 'yes'
@@ -122,12 +139,12 @@ class VoteView(discord.ui.View):
 
             if vote_changed:
                 await interaction.respond(
-                    f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes.",
+                    f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes." + prompt,
                     ephemeral=True,
                 )
             else:
                 await interaction.respond(
-                    f"You voted {vote_type.capitalize()} with {role_votes} votes.",
+                    f"You voted {vote_type.capitalize()} with {role_votes} votes." + prompt,
                     ephemeral=True,
                 )
 
@@ -712,7 +729,7 @@ After a set amount of time, the bot will show the results of the poll and automa
 
 # Unrestricted Commands
 
-@bot.command(description="Instructions for using bot, and praovides a link to source code")
+@bot.command(description="Instructions for using bot, and provides a link to source code")
 async def help(ctx):
     """
     Provide help instructions and a link to the source code.
@@ -775,6 +792,28 @@ async def cancel_my_vote(ctx):
         logger.warning(f"VoteView not found for thread {ctx.channel.id}")
         await ctx.respond("An error occurred while processing your vote.", ephemeral=True)
 
+@bot.command(description="Submit anonymous feedback on the current role request.")
+async def submit_request_feedback(ctx, feedback: discord.Option(str, required=True)):
+    """
+    Submit feedback on the current role request.
+    This command can only be used in a role request thread.
+    Dependent on 'CHANNEL_ID' constant in config.
+
+    Args:
+        ctx (discord.ApplicationContext): The context of the command invocation.
+        feedback (str): The feedback to submit.
+    """
+    # Check if the command is used in a thread
+    if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
+        await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
+        return
+
+    # Submit feedback internally
+    app.submit_feedback(ctx.channel.id, ctx.user.id, feedback)
+
+    # Send public feedback message anonymously
+    await ctx.send(f"**=== Anonymous Feedback ===**\n{feedback}")
+    await ctx.respond("Thank you for your feedback!", ephemeral=True)
 
 
 dotenv.load_dotenv()

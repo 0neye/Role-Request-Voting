@@ -84,6 +84,22 @@ class RequestsManager:
         except KeyError:
             raise ValueError("Invalid request ID.")
 
+    def submit_feedback(self, request_id: int, user_id: int, feedback: str):
+        """
+        Submit feedback for a role request.
+
+        Args:
+            request_id (int): The ID of the request.
+            user_id (int): The ID of the user submitting the feedback.
+            feedback (str): The feedback text.
+        """
+
+        try:
+            self.requests[request_id].submit_feedback(user_id, feedback)
+            self.save_state()
+        except KeyError:
+            raise ValueError("Invalid request ID.")
+
     def get_request(self, request_id: int) -> Optional[RoleRequest]:
         """
         Get a role request by its ID.
