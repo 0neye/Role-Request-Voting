@@ -12,6 +12,7 @@ class RequestsManager:
         """
 
         self.requests: dict = {}
+        self.closed_requests: dict = {} # dict of lists to support multiple requests per thread
 
     def add_request(
         self, user_id: int, thread_id: int, title: str, end_time: str, role: str = None
@@ -115,10 +116,26 @@ class RequestsManager:
             return self.requests[request_id]
         except KeyError:
             return None
+    
+    def get_closed_requests(self, thread_id: int) -> Optional[list[RoleRequest]]:
+        """
+        Get a history of closed requests in a thread by its ID.
+
+        Args:
+            thread_id (int): The ID of the request thread.
+
+        Returns:
+            list[RoleRequest] | None: List of role request objects or None if not found.
+        """
+
+        try:
+            return self.closed_requests[thread_id]
+        except KeyError:
+            return None
 
     def remove_request(self, request_id: int):
         """
-        Remove a role request by its ID.
+        Remove a role request by its ID. Does not move it to the closed requests list.
 
         Args:
             request_id (int): The ID of the request.
@@ -130,6 +147,27 @@ class RequestsManager:
         except KeyError:
             raise ValueError("Invalid request ID.")
 
+    def close_request(self, request_id: int):
+        """
+        Close a role request by its ID, moving it to the closed requests list.
+
+        Args:
+            request_id (int): The ID of the request.
+        """
+
+        try:
+            self.requests[request_id].closed = True
+            if self.closed_requests.get(request_id) is None:
+                self.closed_requests[request_id] = [self.requests[request_id]]
+            else:
+                self.closed_requests[request_id].append(self.requests[request_id])
+
+            del self.requests[request_id]
+            self.save_state()
+        except KeyError:
+            raise ValueError("Invalid request ID.")
+        
+
     def save_state(self):
         """
         Save the current state of 'self.requests' to a json file.
@@ -139,8 +177,14 @@ class RequestsManager:
         with open(STATE_FILE_NAME, "w") as file:
             json.dump(
                 {
+                    "requests": {
                     request_id: request.to_dict()
                     for request_id, request in self.requests.items()
+                    },
+                    "closed_requests": {
+                    request_id: [request.to_dict() for request in requests]
+                    for request_id, requests in self.closed_requests.items()
+                    },
                 },
                 file,
             )
@@ -156,14 +200,30 @@ class RequestsManager:
                 file_content = file.read().strip()
                 if not file_content:
                     self.requests = {}
+                    self.closed_requests = {}
                     print("File is empty or contains only whitespace. Starting Fresh.")
                     return
 
+                data = json.loads(file_content)
+
+                # Migration code
+                # Todo: Remove this in the future
+                if "requests" not in data:
+                    data = {
+                        "requests": data,
+                        "closed_requests": {},
+                    }
+
                 self.requests = {
-                    int(request_id): RoleRequest.from_dict(data)
-                    for request_id, data in json.loads(file_content).items()
+                    int(request_id): RoleRequest.from_dict(request_data)
+                    for request_id, request_data in data.get("requests", {}).items()
+                }
+                self.closed_requests = {
+                    int(request_id): [RoleRequest.from_dict(request_data) for request_data in requests]
+                    for request_id, requests in data.get("closed_requests", {}).items()
                 }
             print("Loaded requests state from file.")
         else:
             self.requests = {}
+            self.closed_requests = {}
             print("No requests state file found. Starting fresh.")

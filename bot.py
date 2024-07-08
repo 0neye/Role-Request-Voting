@@ -366,8 +366,8 @@ async def end_vote(view: VoteView):
     request: RoleRequest = app.get_request(view.thread_id)
     logger.info(f"# Ending vote with thread id '{view.thread_id}': \"{request.title}\"\n")
 
-    # Delete the role request from the active list
-    app.remove_request(view.thread_id)
+    # Remove the role request from the active list
+    app.close_request(view.thread_id)
 
     # Get the current thread
     thread = bot.get_channel(view.thread_id) or await bot.fetch_channel(view.thread_id)
@@ -669,7 +669,7 @@ async def end_vote_early(ctx, outcome: discord.Option(str, choices=["Approve", "
 
     await end_vote(view)
 
-@bot.command(description="Show all voting data for this request. Requires moderator or Paragon roles. This is logged.")
+@bot.command(description="Show all voting data for this request. Logged and requires moderator or Paragon roles.")
 async def show_votes(ctx):
     """
     Show all voting data for the current request.
@@ -684,10 +684,10 @@ async def show_votes(ctx):
     if thread is None:
         return
 
-    # Get the request
-    request = app.get_request(thread.id)
+    # Get the most recent request
+    request = app.get_request(thread.id) or app.get_closed_requests(thread.id)[-1]
     if request is None:
-        await ctx.respond("This thread is not a role request.", ephemeral=True)
+        await ctx.respond("This thread is not an active role request and has no closed requests.", ephemeral=True)
         return
 
     # Log command use to moderation log channel
@@ -709,12 +709,12 @@ async def show_votes(ctx):
     vote_data = []
     for vote_list, vote_type in [(request.yes_votes, "Yes"), (request.no_votes, "No")]:
         for user_id, vote_count in vote_list:
-            member = _guild.get_member(user_id) or (await _guild.fetch_member(user_id))
+            member = _guild.get_member(user_id) or await _guild.fetch_member(user_id)
             display_name = member.display_name if member else f"Unknown User ({user_id})"
             vote_data.append((display_name, vote_type, vote_count))
 
     # Sort vote data by display number of votes
-    vote_data.sort(key=lambda x: x[2])
+    vote_data.sort(key=lambda x: x[2], reverse=True)
 
     # Create the table
     table = "```\nUser            | Vote | Count\n" + "-" * 30 + "\n"
@@ -729,19 +729,19 @@ async def show_votes(ctx):
 
     # Add feedback if any
     if request.feedback:
-        name = _guild.get_member(user_id).display_name or (await _guild.fetch_member(user_id)).display_name
+        name = (_guild.get_member(user_id) or await _guild.fetch_member(user_id)).display_name
         feedback_text = "\n".join([f"• {name}: {feedback}" for user_id, feedback in request.feedback])
         embed.add_field(name="Feedback", value=feedback_text, inline=False)
     else:
         embed.add_field(name="Feedback", value="No feedback submitted", inline=False)
 
     # Add veto information if any
-    # if request.veto:
-    #     veto_user_id, veto_result = request.veto
-    #     veto_member = _guild.get_member(veto_user_id) or await _guild.fetch_member(veto_user_id)
-    #     veto_display_name = veto_member.display_name if veto_member else f"Unknown User ({veto_user_id})"
-    #     veto_text = f"Veto by {veto_display_name}: {'Approved' if veto_result else 'Denied'}"
-    #     embed.add_field(name="Veto", value=veto_text, inline=False)
+    if request.veto:
+        veto_user_id, veto_result = request.veto
+        veto_member = _guild.get_member(veto_user_id) or await _guild.fetch_member(veto_user_id)
+        veto_display_name = veto_member.display_name if veto_member else f"Unknown User ({veto_user_id})"
+        veto_text = f"Veto by {veto_display_name}: {'Approved' if veto_result else 'Denied'}"
+        embed.add_field(name="Veto", value=veto_text, inline=False)
     
     # Send the embed
     await ctx.respond(content="Command use logged.", embed=embed, ephemeral=True)

@@ -1,5 +1,6 @@
 from config import ACCEPTANCE_THRESHOLDS, IGNORE_VOTE_WEIGHT, VALID_ROLES
 import re
+from datetime import datetime, timezone
 
 class RoleRequest:
     def __init__(
@@ -31,6 +32,8 @@ class RoleRequest:
         # (int, bool) = (user_id, veto); user being the one to make the veto
         self.veto: None | (int, bool) = None
         self.ignore_vote_weight = False
+
+        self.closed = False
 
         # Extract role from title if not provided
         if not self.role:
@@ -70,6 +73,7 @@ class RoleRequest:
         instance.feedback = data.get("anon_feedback") or []
         instance.num_users = data.get("num_users") or 0
         instance.veto = data.get("veto")
+        instance.closed = data.get("closed") or int(instance.end_time) > int(datetime.now(timezone.utc).timestamp())
 
         return instance
 
@@ -208,4 +212,5 @@ class RoleRequest:
             "anon_feedback": self.feedback,
             "num_users": self.num_users,
             "veto": self.veto,
+            "closed": self.closed,
         }
