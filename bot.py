@@ -558,7 +558,6 @@ async def _init_request(thread: discord.Thread):
 
     # Finally construct the view
     view = VoteView(owner, thread_id, thread_title, end_time)
-    bot.add_view(view, message_id=request.bot_message_id)
 
     embed = discord.Embed(
         title=f"Role Application - {request.role}",
@@ -586,10 +585,16 @@ async def _init_request(thread: discord.Thread):
             inline=False,
         )
 
-    vote_message = await thread.send(embed=embed, view=view)
-    await vote_message.pin()
+    try:
+        # Potentially getting an error on send that means a view isn't saved?
+        vote_message = await thread.send(embed=embed, view=view)
+        await vote_message.pin()
 
-    app.update_bot_message_id(thread_id, vote_message.id)
+        app.update_bot_message_id(thread_id, vote_message.id)
+    except Exception as e:
+        logger.error(f"Error when sending role request message: {e}")
+        await thread.send(f"Error when sending role request message: {e}")
+        return
 
     logger.info(
         f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'.")
