@@ -537,7 +537,7 @@ async def _init_request(thread: discord.Thread):
         # Won't throw if the role was found in the tags
         app.add_request(thread.owner_id, thread_id,
                         thread_title, end_time, role)
-    except ValueError as e:
+    except Exception as e:
         logger.error(f"Error when creating role request: {e}")
         await thread.send(f"Error when creating role request: {e}")
         return
@@ -558,6 +558,7 @@ async def _init_request(thread: discord.Thread):
 
     # Finally construct the view
     view = VoteView(owner, thread_id, thread_title, end_time)
+    bot.add_view(view, message_id=request.bot_message_id)
 
     embed = discord.Embed(
         title=f"Role Application - {request.role}",
