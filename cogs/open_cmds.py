@@ -97,6 +97,12 @@ class OpenCmds(commands.Cog):
             await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
             return
 
+        # Check if it's an active request
+        request = app.get_request(ctx.channel.id)
+        if request is None:
+            await ctx.respond("There is no active request in this thread.", ephemeral=True)
+            return
+
         # Get the view and call the appropriate handle_vote function
         view = next(
             (v for v in self.bot.persistent_views if v.thread_id == ctx.channel.id), None)
@@ -119,6 +125,12 @@ class OpenCmds(commands.Cog):
         # Check if the command is used in a thread
         if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
             await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
+            return
+
+        # Check if it's an active request
+        request = app.get_request(ctx.channel.id)
+        if request is None:
+            await ctx.respond("There is no active request in this thread.", ephemeral=True)
             return
 
         # Get the view and call the appropriate cancel_vote function
@@ -146,18 +158,21 @@ class OpenCmds(commands.Cog):
             await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
             return
 
-        # Make sure it's an active request
+        # Check if it's an active request
         request = app.get_request(ctx.channel.id)
         if request is None:
             await ctx.respond("There is no active request in this thread.", ephemeral=True)
             return
         
-        # Submit feedback internally
-        app.submit_feedback(ctx.channel.id, ctx.user.id, feedback)
-
-        # Send public feedback message anonymously
-        await ctx.send(f"**=== Anonymous Feedback ===**\n{feedback}")
-        await ctx.respond("Thank you for your feedback!", ephemeral=True)
+        # Get the view and call the appropriate submit_feedback function
+        view = next(
+            (v for v in self.bot.persistent_views if v.thread_id == ctx.channel.id), None)
+        if view:
+            await view.submit_feedback(ctx.interaction, ctx.user.id, feedback)
+            await ctx.respond("Thank you for your feedback!", ephemeral=True)
+        else:
+            logger.warning(f"VoteView not found for thread {ctx.channel.id}")
+            await ctx.respond("An error occurred while processing your vote.", ephemeral=True)
 
 
 def setup(bot):

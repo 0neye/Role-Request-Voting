@@ -98,7 +98,7 @@ CLOSE_POST = False  # if true, the bot will close the post after the voting peri
 
 # Vote feedback
 PROMPT_NO_VOTERS_FOR_FEEDBACK = True # whether to prompt people voting 'no' for feedback
-PROMPT_YES_VOTERS_FOR_FEEDBACK = False # whether to prompt people voting 'yes' for feedback
+PROMPT_YES_VOTERS_FOR_FEEDBACK = True # whether to prompt people voting 'yes' for feedback
 PROMPT_AFTER_FIRST_FEEDBACK = True # whether to only prompt people until someone submits feedback, or keep prompting everyone
 
 CHANNEL_ID = 1101149194498089051  # Forum channel ID
