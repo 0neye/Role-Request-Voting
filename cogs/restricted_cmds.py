@@ -1,7 +1,8 @@
+import asyncio
 import discord
 from discord.ext import commands
 from bot import logger, app, end_vote, _init_request
-from config import CHANNEL_ID, COMMAND_WHITELISTED_ROLES, DEV_MODE, MOD_LOG_CHANNEL_ID
+from config import CHANNEL_ID, COMMAND_WHITELISTED_ROLES, DEV_MODE, LOG_FILE_NAME, MOD_LOG_CHANNEL_ID
 
 
 class RestrictedCmds(commands.Cog):
@@ -119,6 +120,71 @@ class RestrictedCmds(commands.Cog):
 
         await end_vote(view)
 
+    @commands.slash_command(description="Force-deletes a role request ungracefully. Logged and requires moderator or Paragon roles.")
+    async def force_delete_request(self, ctx):
+        """
+        Force-deletes a role request ungracefully.
+        Dependent on the 'COMMAND_WHITELISTED_ROLES' and 'MOD_LOG_CHANNEL' constants in config.
+
+        Args:
+            ctx (discord.ext.commands.Context): The context of the command.
+        """
+
+        # Get the thread
+        thread = await self._restricted_cmd_ctx_to_thread(ctx)
+        if thread is None:
+            return
+
+        # Ask for confirmation
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Confirm", style=discord.ButtonStyle.danger, custom_id="confirm"))
+        await ctx.interaction.response.send_message(
+            "Are you sure you want to force-delete this request? This action cannot be undone.",
+            view=view,
+            ephemeral=True
+        )
+
+        try:
+            # Wait for the user to click the button
+            interaction = await self.bot.wait_for(
+                "interaction",
+                check=lambda i: i.data["custom_id"] == "confirm" and i.user.id == ctx.author.id,
+                timeout=60.0
+            )
+        except asyncio.TimeoutError:
+            await ctx.interaction.edit_original_message(content="Force-delete request timed out.", view=None)
+            return
+        
+        # User confirmed, proceed with deletion
+        await interaction.response.defer()
+        await ctx.interaction.edit_original_message(content="Proceeding with force-delete...", view=None)
+
+        # Log command use to moderation log channel
+        if MOD_LOG_CHANNEL_ID:
+            try:
+                channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID) or await self.bot.fetch_channel(MOD_LOG_CHANNEL_ID)
+                await channel.send(f"{ctx.user.mention} force-deleted role request in {thread.mention}.")
+                logger.info(f"{ctx.user.mention} force-deleted role request in {thread.mention}.")
+            except Exception as e:
+                logger.error(e)
+
+        # Force-delete the request
+        request = app.get_request(thread.id)
+        if request is not None:
+            try:
+                message = await thread.fetch_message(request.bot_message_id)
+                await message.delete()
+                self.bot.persistent_views = [v for v in self.bot.persistent_views if v.thread_id != thread.id]
+            except:
+                # No vote message exists, our job is already done
+                pass
+            app.remove_request(thread.id)
+
+            await ctx.respond("Request deleted.", ephemeral=True)
+        else:
+            await ctx.respond("This thread is not an active role request.", ephemeral=True)
+
+
     @commands.slash_command(description="Show voting data for most recent request. Logged and requires moderator or Paragon roles.")
     async def show_votes(self, ctx):
         """
@@ -136,16 +202,19 @@ class RestrictedCmds(commands.Cog):
 
         # Get the most recent request
         request = app.get_request(
-            thread.id) or app.get_closed_requests(thread.id)[-1]
+            thread.id) or app.get_closed_requests(thread.id)
         if request is None:
             await ctx.respond("This thread is not an active role request and has no closed requests.", ephemeral=True)
             return
+        if isinstance(request, list):
+            request = request[-1]
 
         # Log command use to moderation log channel
         if MOD_LOG_CHANNEL_ID:
             try:
                 channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID) or await self.bot.fetch_channel(MOD_LOG_CHANNEL_ID)
                 await channel.send(f"{ctx.user.mention} used the 'show_votes' command in {thread.mention} to show voting data.")
+                logger.info(f"User {ctx.user} used the 'show_votes' command in {thread.mention} to show voting data.")
             except Exception as e:
                 logger.error(e)
                 ctx.respond(
@@ -202,6 +271,21 @@ class RestrictedCmds(commands.Cog):
         # Send the embed
         await ctx.respond(content="Command use logged.", embed=embed, ephemeral=True)
 
+    @commands.slash_command(description="Sends the log file as a file attachment. Requires moderator or Paragon roles.")
+    async def send_log(self, ctx):
+        """
+        Sends the log file as a file attachment. Dependent on 'COMMAND_WHITELISTED_ROLES' and 'LOG_FILE_NAME' constant in config.
+
+        Args:
+            ctx (discord.ext.commands.Context): The context of the command.
+        """
+
+        # Get the log file
+        log_file = open(LOG_FILE_NAME, "rb")
+
+        # Send the log file
+        await ctx.respond(file=discord.File(log_file, LOG_FILE_NAME), ephemeral=True)
+        log_file.close()
 
 def setup(bot):
     bot.add_cog(RestrictedCmds(bot))
