@@ -596,10 +596,12 @@ async def _init_request(thread: discord.Thread):
             app.update_bot_message_id(thread_id, vote_message.id)
             break
         except Exception as e:
-            logger.error(f"Error when sending role request message: {e}\nTrying again.")
+            logger.error(
+                f"Error when sending role request message: {e}\nTrying again.")
             n += 1
     else:
-        logger.error(f"Failed to send role request message in {thread_id} after {n} tries. Deleting request.")
+        logger.error(
+            f"Failed to send role request message in {thread_id} after {n} tries. Deleting request.")
         app.remove_request(thread_id)
         await thread.send(f"Failed to send role request message in {thread_id} after {n} tries. Deleting request.")
         return
