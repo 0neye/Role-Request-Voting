@@ -2,6 +2,7 @@ from config import ACCEPTANCE_THRESHOLDS, IGNORE_VOTE_WEIGHT, VALID_ROLES
 import re
 from datetime import datetime, timezone
 
+
 class RoleRequest:
     def __init__(
         self, user_id: int, thread_id: int, title: str, end_time: int, role: str = None,
@@ -26,8 +27,8 @@ class RoleRequest:
         self.role = role
         self.yes_votes: list = []  # List of (userid, vote #)
         self.no_votes: list = []  # List of (userid, vote #)
-        self.feedback: list = [] # List of (userid, feedback)
-        self.num_users: int = 0 # Number of users that cast a vote
+        self.feedback: list = []  # List of (userid, feedback)
+        self.num_users: int = 0  # Number of users that cast a vote
 
         # (int, bool) = (user_id, veto); user being the one to make the veto
         self.veto: None | (int, bool) = None
@@ -44,7 +45,7 @@ class RoleRequest:
                     break
             else:
                 raise ValueError("Invalid role.")
-        
+
         self.threshold = ACCEPTANCE_THRESHOLDS[self.role]
         self.ignore_vote_weight = self.role in IGNORE_VOTE_WEIGHT
 
@@ -73,7 +74,8 @@ class RoleRequest:
         instance.feedback = data.get("feedback") or []
         instance.num_users = data.get("num_users") or 0
         instance.veto = data.get("veto")
-        instance.closed = data.get("closed") or int(instance.end_time) < int(datetime.now(timezone.utc).timestamp())
+        instance.closed = data.get("closed") or int(
+            instance.end_time) < int(datetime.now(timezone.utc).timestamp())
 
         return instance
 
@@ -94,9 +96,9 @@ class RoleRequest:
             self.no_votes.append((user_id, votes * -1))
         else:
             self.yes_votes.append((user_id, votes))
-        
+
         self._update_usercount()
-    
+
     def vote_or_change(self, user_id: int, new_votes: int):
         """
         Vote on the role request, or change an existing vote.
@@ -107,8 +109,10 @@ class RoleRequest:
         """
 
         if self.has_voted(user_id):
-            self.yes_votes = [vote for vote in self.yes_votes if vote[0] != user_id]
-            self.no_votes = [vote for vote in self.no_votes if vote[0] != user_id]
+            self.yes_votes = [
+                vote for vote in self.yes_votes if vote[0] != user_id]
+            self.no_votes = [
+                vote for vote in self.no_votes if vote[0] != user_id]
         self.vote(user_id, new_votes)
 
     def remove_vote(self, user_id: int):
@@ -118,7 +122,8 @@ class RoleRequest:
         Args:
             user_id (int): The ID of the user whose vote should be removed.
         """
-        self.yes_votes = [vote for vote in self.yes_votes if vote[0] != user_id]
+        self.yes_votes = [
+            vote for vote in self.yes_votes if vote[0] != user_id]
         self.no_votes = [vote for vote in self.no_votes if vote[0] != user_id]
         self._update_usercount()
 
@@ -144,7 +149,7 @@ class RoleRequest:
         yes_count = sum(vote[1] for vote in self.yes_votes) or 0
         no_count = sum(vote[1] for vote in self.no_votes) or 0
         return (yes_count, no_count)
-    
+
     def _update_usercount(self):
         self.num_users = len(self.yes_votes) + len(self.no_votes)
         return

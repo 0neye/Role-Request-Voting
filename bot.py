@@ -537,7 +537,7 @@ async def _init_request(thread: discord.Thread):
         # Won't throw if the role was found in the tags
         app.add_request(thread.owner_id, thread_id,
                         thread_title, end_time, role)
-    except ValueError as e:
+    except Exception as e:
         logger.error(f"Error when creating role request: {e}")
         await thread.send(f"Error when creating role request: {e}")
         return
@@ -585,10 +585,26 @@ async def _init_request(thread: discord.Thread):
             inline=False,
         )
 
-    vote_message = await thread.send(embed=embed, view=view)
-    await vote_message.pin()
+    vote_message = None
+    n = 0
+    while not vote_message and n < 5:
+        try:
+            # Potentially getting an error on send that means a view isn't saved?
+            vote_message = await thread.send(embed=embed, view=view)
+            await vote_message.pin()
 
-    app.update_bot_message_id(thread_id, vote_message.id)
+            app.update_bot_message_id(thread_id, vote_message.id)
+            break
+        except Exception as e:
+            logger.error(
+                f"Error when sending role request message: {e}\nTrying again.")
+            n += 1
+    else:
+        logger.error(
+            f"Failed to send role request message in {thread_id} after {n} tries. Deleting request.")
+        app.remove_request(thread_id)
+        await thread.send(f"Failed to send role request message in {thread_id} after {n} tries. Deleting request.")
+        return
 
     logger.info(
         f"Created new role request for '{request.role}' in '{thread_id}' by '{owner.mention}'.")

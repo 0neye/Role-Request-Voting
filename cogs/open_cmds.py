@@ -163,7 +163,7 @@ class OpenCmds(commands.Cog):
         if request is None:
             await ctx.respond("There is no active request in this thread.", ephemeral=True)
             return
-        
+
         # Get the view and call the appropriate submit_feedback function
         view = next(
             (v for v in self.bot.persistent_views if v.thread_id == ctx.channel.id), None)
