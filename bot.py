@@ -122,16 +122,28 @@ class VoteView(discord.ui.View):
             request = app.get_request(self.thread_id)
             vote_changed = request.has_voted(user.id)
 
-            # Handle feedback prompt
+            # Handle feedback prompt modal
             request_has_feedback = len(request.feedback) > 0
             user_submitted_feedback = request.has_submitted_feedback(user.id)
-            prompt = f"\n\n{user.mention} Would you like to{' be the first to' if not request_has_feedback else ''} " \
-                "submit anonymous feedback for this request?\nJust do `/submit_request_feedback` in this channel." \
-                if (vote_type == "no" and PROMPT_NO_VOTERS_FOR_FEEDBACK) \
-                or (vote_type == "yes" and PROMPT_YES_VOTERS_FOR_FEEDBACK) \
-                and (not request_has_feedback or PROMPT_AFTER_FIRST_FEEDBACK) \
-                and not user_submitted_feedback \
-                else ""
+            feedback = ""
+
+            # Figure out when to send the modal
+            if ((vote_type == "no" and PROMPT_NO_VOTERS_FOR_FEEDBACK)
+                    or (vote_type == "yes" and PROMPT_YES_VOTERS_FOR_FEEDBACK)) \
+                    and (not request_has_feedback or PROMPT_AFTER_FIRST_FEEDBACK) \
+                    and not user_submitted_feedback:
+
+                # Create and show the modal
+                modal = VoteModal(vote_type)
+                await interaction.response.send_modal(modal)
+
+                # Wait for the modal to be submitted
+                try:
+                    await modal.wait()
+                except asyncio.TimeoutError:
+                    return
+
+                feedback = modal.feedback.value
 
             role_votes = self._get_user_votes(user, request)
 
@@ -140,16 +152,13 @@ class VoteView(discord.ui.View):
                                 user.id, role_votes * (-1 if vote_type == "no" else 1))
             await self._update_displayed_member_count()
 
-            if vote_changed:
-                await interaction.respond(
-                    f"You changed your vote to {vote_type.capitalize()} with {role_votes} votes." + prompt,
-                    ephemeral=True,
-                )
-            else:
-                await interaction.respond(
-                    f"You voted {vote_type.capitalize()} with {role_votes} votes." + prompt,
-                    ephemeral=True,
-                )
+            response_message = f"You {'changed your vote to' if vote_changed else 'voted'} {vote_type.capitalize()} with {role_votes} votes."
+
+            if feedback != "":
+                await self.submit_feedback(interaction, user.id, feedback)
+                response_message += " Your feedback has been recorded and sent."
+
+            await interaction.respond(response_message, ephemeral=True)
 
         except Exception as e:
             logger.error(
@@ -187,6 +196,23 @@ class VoteView(discord.ui.View):
             logger.error(
                 f"Unexpected error cancelling vote for user {user_id} in thread {thread_id}: {str(e)}")
             await interaction.respond("An unexpected error occurred.", ephemeral=True)
+
+    async def submit_feedback(self, interaction: discord.Interaction, user_id: int, feedback: str):
+        """
+        Submits feedback for a role request. 
+        Saves the feedback to the database and sends it anonymously.
+
+        Args:
+            interaction (discord.Interaction): The interaction used for sending the feedback.
+            user_id (int): The ID of the user submitting the feedback.
+            feedback (str): The feedback to submit.
+        """
+
+        # Submit internally
+        app.submit_feedback(self.thread_id, user_id, feedback)
+
+        # Send public message anonymously
+        await interaction.channel.send(f"**=== Anonymous Feedback ===**\n{feedback}")
 
     def _get_user_votes(self, user: discord.Member, request: RoleRequest):
         """
@@ -240,6 +266,25 @@ class VoteView(discord.ui.View):
         print("checking...")
         if int(datetime.now(timezone.utc).timestamp()) >= self.end_time:
             await end_vote(self)
+
+
+class VoteModal(discord.ui.Modal):
+    def __init__(self, vote_type: str):
+        super().__init__(title=f"Vote {vote_type.capitalize()}")
+        self.vote_type = vote_type
+
+        self.feedback = discord.ui.InputText(
+            label="Submit anonymous feedback for this request?",
+            style=discord.InputTextStyle.long,
+            placeholder="Enter your feedback here...",
+            required=False,
+            max_length=3000
+        )
+
+        self.add_item(self.feedback)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
 
 
 async def _finish_vote(thread: discord.Thread, request: RoleRequest):

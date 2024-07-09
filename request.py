@@ -18,7 +18,7 @@ class RoleRequest:
             role (str, optional): The role being requested. Defaults to None.
         """
 
-        self.user_id: int = user_id  # user ID
+        self.user_id: int = user_id
         self.thread_id = thread_id
         self.title: str = title
         self.end_time: str = end_time
