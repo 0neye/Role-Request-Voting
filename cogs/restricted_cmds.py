@@ -1,4 +1,5 @@
 import asyncio
+import io
 import discord
 from discord.ext import commands
 from bot import logger, app, end_vote, _init_request
@@ -246,17 +247,19 @@ class RestrictedCmds(commands.Cog):
         table += "```"
         embed.add_field(name="Votes", value=table, inline=False)
 
-        # Add vote totals
+        # Add vote totals and outcome
         yes_count, no_count = request.get_votes()
         embed.add_field(name="Vote Totals",
-                        value=f"Yes: {yes_count}\nNo: {no_count}", inline=False)
+                        value=f"Yes: {yes_count}\nNo: {no_count}\nAccepted: {request.result()}", inline=False)
 
-        # Add feedback if any
+        # Create feedback file if any
+        feedback_file = None
         if request.feedback:
-            name = (_guild.get_member(user_id) or await _guild.fetch_member(user_id)).display_name
-            feedback_text = "\n".join(
-                [f"• {name}: {feedback}" for user_id, feedback in request.feedback])
-            embed.add_field(name="Feedback", value=feedback_text, inline=False)
+            feedback_content = ""
+            for user_id, feedback in request.feedback:
+                name = (_guild.get_member(user_id) or await _guild.fetch_member(user_id)).display_name
+                feedback_content += f"# {name}:\n```{feedback}```\n\n"
+            feedback_file = discord.File(io.StringIO(feedback_content), filename="feedback.md")
         else:
             embed.add_field(name="Feedback",
                             value="No feedback submitted", inline=False)
@@ -269,8 +272,8 @@ class RestrictedCmds(commands.Cog):
             veto_text = f"Veto by {veto_display_name}: {'Approved' if veto_result else 'Denied'}"
             embed.add_field(name="Veto", value=veto_text, inline=False)
 
-        # Send the embed
-        await ctx.respond(content="Command use logged.", embed=embed, ephemeral=True)
+        # Send the embed and feedback file
+        await ctx.respond(content="Command use logged.", embed=embed, file=feedback_file, ephemeral=True)
 
     @commands.slash_command(description="Sends the log file as a file attachment. Requires moderator or Paragon roles.")
     async def send_log(self, ctx):

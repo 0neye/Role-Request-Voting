@@ -212,7 +212,14 @@ class VoteView(discord.ui.View):
         app.submit_feedback(self.thread_id, user_id, feedback)
 
         # Send public message anonymously
-        await interaction.channel.send(f"**=== Anonymous Feedback ===**\n{feedback}")
+        # Split feedback into chunks of ~2000 characters (Discord's message limit)
+        feedback_chunks = [feedback[i:i+1960] for i in range(0, len(feedback), 1960)]
+        
+        for i, chunk in enumerate(feedback_chunks):
+            if i == 0:
+                await interaction.channel.send(f"**=== Anonymous Feedback ===**\n{chunk}")
+            else:
+                await interaction.channel.send(chunk)
 
     def _get_user_votes(self, user: discord.Member, request: RoleRequest):
         """
