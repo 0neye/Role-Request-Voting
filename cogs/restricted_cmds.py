@@ -196,84 +196,89 @@ class RestrictedCmds(commands.Cog):
             ctx (discord.ext.commands.Context): The context of the command.
         """
 
-        # Get the thread
-        thread = await self._restricted_cmd_ctx_to_thread(ctx)
-        if thread is None:
-            return
-
-        # Get the most recent request
-        request = app.get_request(
-            thread.id) or app.get_closed_requests(thread.id)
-        if request is None:
-            await ctx.respond("This thread is not an active role request and has no closed requests.", ephemeral=True)
-            return
-        if isinstance(request, list):
-            request = request[-1]
-
-        # Log command use to moderation log channel
-        if MOD_LOG_CHANNEL_ID:
-            try:
-                channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID) or await self.bot.fetch_channel(MOD_LOG_CHANNEL_ID)
-                await channel.send(f"{ctx.user.mention} used the 'show_votes' command in {thread.mention} to show voting data.")
-                logger.info(
-                    f"User {ctx.user} used the 'show_votes' command in {thread.mention} to show voting data.")
-            except Exception as e:
-                logger.error(e)
-                ctx.respond(
-                    "Failed to log command use to moderation log channel.", ephemeral=True)
+        try:
+            # Get the thread
+            thread = await self._restricted_cmd_ctx_to_thread(ctx)
+            if thread is None:
                 return
 
-        # Create an embed to display voting data
-        embed = discord.Embed(
-            title=f"Voting Data for {request.role} Request", color=discord.Color.blue())
-        embed.description = f"**Request Title:** {request.title}\n**Requester:** <@{request.user_id}>"
-        _guild: discord.Guild = ctx.guild
+            # Get the most recent request
+            request = app.get_request(
+                thread.id) or app.get_closed_requests(thread.id)
+            if request is None:
+                await ctx.respond("This thread is not an active role request and has no closed requests.", ephemeral=True)
+                return
+            if isinstance(request, list):
+                request = request[-1]
 
-        # Get the vote data
-        vote_data = []
-        for vote_list, vote_type in [(request.yes_votes, "Yes"), (request.no_votes, "No")]:
-            for user_id, vote_count in vote_list:
-                member = _guild.get_member(user_id) or await _guild.fetch_member(user_id)
-                display_name = member.display_name if member else f"Unknown User ({user_id})"
-                vote_data.append((display_name, vote_type, vote_count))
+            # Log command use to moderation log channel
+            if MOD_LOG_CHANNEL_ID:
+                try:
+                    channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID) or await self.bot.fetch_channel(MOD_LOG_CHANNEL_ID)
+                    await channel.send(f"{ctx.user.mention} used the 'show_votes' command in {thread.mention} to show voting data.")
+                    logger.info(
+                        f"User {ctx.user} used the 'show_votes' command in {thread.mention} to show voting data.")
+                except Exception as e:
+                    logger.error(e)
+                    ctx.respond(
+                        "Failed to log command use to moderation log channel.", ephemeral=True)
+                    return
 
-        # Sort vote data by display number of votes
-        vote_data.sort(key=lambda x: x[2], reverse=True)
+            # Create an embed to display voting data
+            embed = discord.Embed(
+                title=f"Voting Data for {request.role} Request", color=discord.Color.blue())
+            embed.description = f"**Request Title:** {request.title}\n**Requester:** <@{request.user_id}>"
+            _guild: discord.Guild = ctx.guild
 
-        # Create the table
-        table = "```\nUser            | Vote | Count\n" + "-" * 30 + "\n"
-        for display_name, vote_type, vote_count in vote_data:
-            table += f"{display_name[:15]:<15} | {vote_type:<4} | {vote_count}\n"
-        table += "```"
-        embed.add_field(name="Votes", value=table, inline=False)
+            # Get the vote data
+            vote_data = []
+            for vote_list, vote_type in [(request.yes_votes, "Yes"), (request.no_votes, "No")]:
+                for user_id, vote_count in vote_list:
+                    member = _guild.get_member(user_id) or await _guild.fetch_member(user_id)
+                    display_name = member.display_name if member else f"Unknown User ({user_id})"
+                    vote_data.append((display_name, vote_type, vote_count))
 
-        # Add vote totals and outcome
-        yes_count, no_count = request.get_votes()
-        embed.add_field(name="Vote Totals",
-                        value=f"Yes: {yes_count}\nNo: {no_count}\nAccepted: {request.result()}", inline=False)
+            # Sort vote data by display number of votes
+            vote_data.sort(key=lambda x: x[2], reverse=True)
 
-        # Create feedback file if any
-        feedback_file = None
-        if request.feedback:
-            feedback_content = ""
-            for user_id, feedback in request.feedback:
-                name = (_guild.get_member(user_id) or await _guild.fetch_member(user_id)).display_name
-                feedback_content += f"# {name}:\n```{feedback}```\n\n"
-            feedback_file = discord.File(io.StringIO(feedback_content), filename="feedback.md")
-        else:
-            embed.add_field(name="Feedback",
-                            value="No feedback submitted", inline=False)
+            # Create the table
+            table = "```\nUser            | Vote | Count\n" + "-" * 30 + "\n"
+            for display_name, vote_type, vote_count in vote_data:
+                table += f"{display_name[:15]:<15} | {vote_type:<4} | {vote_count}\n"
+            table += "```"
+            embed.add_field(name="Votes", value=table, inline=False)
 
-        # Add veto information if any
-        if request.veto:
-            veto_user_id, veto_result = request.veto
-            veto_member = _guild.get_member(veto_user_id) or await _guild.fetch_member(veto_user_id)
-            veto_display_name = veto_member.display_name if veto_member else f"Unknown User ({veto_user_id})"
-            veto_text = f"Veto by {veto_display_name}: {'Approved' if veto_result else 'Denied'}"
-            embed.add_field(name="Veto", value=veto_text, inline=False)
+            # Add vote totals and outcome
+            yes_count, no_count = request.get_votes()
+            embed.add_field(name="Vote Totals",
+                            value=f"Yes: {yes_count}\nNo: {no_count}\nAccepted: {request.result()}", inline=False)
 
-        # Send the embed and feedback file
-        await ctx.respond(content="Command use logged.", embed=embed, file=feedback_file, ephemeral=True)
+            # Create feedback file if any
+            feedback_file = None
+            if request.feedback:
+                feedback_content = ""
+                for user_id, feedback in request.feedback:
+                    name = (_guild.get_member(user_id) or await _guild.fetch_member(user_id)).display_name
+                    feedback_content += f"# {name}:\n```{feedback}```\n\n"
+                feedback_file = discord.File(io.StringIO(feedback_content), filename="feedback.md")
+            else:
+                embed.add_field(name="Feedback",
+                                value="No feedback submitted", inline=False)
+
+            # Add veto information if any
+            if request.veto:
+                veto_user_id, veto_result = request.veto
+                veto_member = _guild.get_member(veto_user_id) or await _guild.fetch_member(veto_user_id)
+                veto_display_name = veto_member.display_name if veto_member else f"Unknown User ({veto_user_id})"
+                veto_text = f"Veto by {veto_display_name}: {'Approved' if veto_result else 'Denied'}"
+                embed.add_field(name="Veto", value=veto_text, inline=False)
+
+            # Send the embed and feedback file
+            await ctx.respond(content="Command use logged.", embed=embed, file=feedback_file, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error showing votes in thread {thread.id}: {e}")
+            ctx.respond("Failed to show voting data.", ephemeral=True)
 
     @commands.slash_command(description="Sends the log file as a file attachment. Requires moderator or Paragon roles.")
     async def send_log(self, ctx):
