@@ -10,11 +10,12 @@ class RestrictedCmds(commands.Cog):
     """Restricted commands that can only be used by specific roles."""
 
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: discord.Bot = bot
 
     async def _restricted_cmd_ctx_to_thread(self, ctx) -> discord.Thread:
         """
         Performs basic checks for restricted commands and returns the thread if valid.
+        Dependent on the 'COMMAND_WHITELISTED_ROLES' and 'CHANNEL_ID' constants in config.
 
         Args:
             ctx (discord.ext.commands.Context): The context of the command.
@@ -46,6 +47,52 @@ class RestrictedCmds(commands.Cog):
             return
 
         return thread
+        
+    
+    async def _log_command_use(self, ctx, command_name):
+        """
+        Log command usage to the moderation log channel.
+        Dependant on the 'MOD_LOG_CHANNEL' constant in config.
+
+        Args:
+            ctx (discord.ext.commands.Context): The context of the command.
+            command_name (str): The name of the command being used.
+        
+        Returns:
+            bool: True if logging was successful, False otherwise.
+        """
+        if MOD_LOG_CHANNEL_ID:
+            try:
+                channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID) or await self.bot.fetch_channel(MOD_LOG_CHANNEL_ID)
+                await channel.send(f"{ctx.user.mention} used the '{command_name}' command in {ctx.channel.mention}.")
+                logger.info(f"User {ctx.user} used the '{command_name}' command in {ctx.channel.mention}.")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to log command use: {e}")
+                await ctx.respond("Failed to log command use to moderation log channel.", ephemeral=True)
+                return False
+        return True
+    
+    async def _get_user_names(self, guild: discord.Guild, user_id: int) -> tuple:
+        """
+        Get a user's display name, handling cases where the user is not in the guild.
+
+        Args:
+            guild (discord.Guild): The guild the user is in (hopefully).
+            user_id (int): The ID of the user.
+
+        Returns:
+            tuple(str, str): The display name of the user and their global username. Can be identical.
+        """
+        try:
+            member: discord.Member = guild.get_member(user_id) or await guild.fetch_member(user_id)
+            return member.display_name, member.name
+        except discord.errors.NotFound:
+            user: discord.User | None = self.bot.get_or_fetch_user(user_id)
+            if user is None:
+                return 'User', f'#{user_id}'
+   
+            return user.display_name, user.name
 
     @commands.slash_command(description="Manually create a vote in this thread. Requires moderator or Paragon roles.")
     async def create_vote(self, ctx):
@@ -131,60 +178,59 @@ class RestrictedCmds(commands.Cog):
             ctx (discord.ext.commands.Context): The context of the command.
         """
 
-        # Get the thread
-        thread = await self._restricted_cmd_ctx_to_thread(ctx)
-        if thread is None:
-            return
-
-        # Ask for confirmation
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="Confirm",
-                      style=discord.ButtonStyle.danger, custom_id="confirm"))
-        await ctx.interaction.response.send_message(
-            "Are you sure you want to force-delete this request? This action cannot be undone.",
-            view=view,
-            ephemeral=True
-        )
-
         try:
-            # Wait for the user to click the button
-            interaction = await self.bot.wait_for(
-                "interaction",
-                check=lambda i: i.data["custom_id"] == "confirm" and i.user.id == ctx.author.id,
-                timeout=60.0
+            # Get the thread
+            thread = await self._restricted_cmd_ctx_to_thread(ctx)
+            if thread is None:
+                return
+
+            # Ask for confirmation
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(label="Confirm",
+                        style=discord.ButtonStyle.danger, custom_id="confirm"))
+            await ctx.interaction.response.send_message(
+                "Are you sure you want to force-delete this request? This action cannot be undone.",
+                view=view,
+                ephemeral=True
             )
-        except asyncio.TimeoutError:
-            await ctx.interaction.edit_original_message(content="Force-delete request timed out.", view=None)
-            return
 
-        # User confirmed, proceed with deletion
-        await interaction.response.defer()
-        await ctx.interaction.edit_original_message(content="Proceeding with force-delete...", view=None)
-
-        # Log command use to moderation log channel
-        if MOD_LOG_CHANNEL_ID:
             try:
-                channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID) or await self.bot.fetch_channel(MOD_LOG_CHANNEL_ID)
-                await channel.send(f"{ctx.user.mention} force-deleted role request in {thread.mention}.")
-                logger.info(
-                    f"{ctx.user.mention} force-deleted role request in {thread.mention}.")
-            except Exception as e:
-                logger.error(e)
+                # Wait for the user to click the button
+                interaction = await self.bot.wait_for(
+                    "interaction",
+                    check=lambda i: i.data["custom_id"] == "confirm" and i.user.id == ctx.author.id,
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                await ctx.interaction.edit_original_message(content="Force-delete request timed out.", view=None)
+                return
 
-        # Force-delete the request
-        request = app.get_request(thread.id)
-        if request is not None:
-            try:
-                message = await thread.fetch_message(request.bot_message_id)
-                await message.delete()
-            except:
-                # No vote message exists, our job is already done
-                pass
-            app.remove_request(thread.id)
+            # User confirmed, proceed with deletion
+            await interaction.response.defer()
+            await ctx.interaction.edit_original_message(content="Proceeding with force-delete...", view=None)
 
-            await ctx.respond("Request deleted.", ephemeral=True)
-        else:
-            await ctx.respond("This thread is not an active role request.", ephemeral=True)
+            # Log command use to moderation log channel
+            if not await self._log_command_use(ctx, "force-delete-request"):
+                return
+
+            # Force-delete the request
+            request = app.get_request(thread.id)
+            if request is not None:
+                try:
+                    message = await thread.fetch_message(request.bot_message_id)
+                    await message.delete()
+                except:
+                    # No vote message exists, our job is already done
+                    pass
+                app.remove_request(thread.id)
+
+                await ctx.respond("Request deleted.", ephemeral=True)
+            else:
+                await ctx.respond("This thread is not an active role request.", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Failed to force-delete request: {e}")
+
 
     @commands.slash_command(description="Show voting data for most recent request. Logged and requires moderator or Paragon roles.")
     async def show_votes(self, ctx):
@@ -212,17 +258,8 @@ class RestrictedCmds(commands.Cog):
                 request = request[-1]
 
             # Log command use to moderation log channel
-            if MOD_LOG_CHANNEL_ID:
-                try:
-                    channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID) or await self.bot.fetch_channel(MOD_LOG_CHANNEL_ID)
-                    await channel.send(f"{ctx.user.mention} used the 'show_votes' command in {thread.mention} to show voting data.")
-                    logger.info(
-                        f"User {ctx.user} used the 'show_votes' command in {thread.mention} to show voting data.")
-                except Exception as e:
-                    logger.error(e)
-                    ctx.respond(
-                        "Failed to log command use to moderation log channel.", ephemeral=True)
-                    return
+            if not await self._log_command_use(ctx, "show-votes"):
+                return
 
             # Create an embed to display voting data
             embed = discord.Embed(
@@ -234,17 +271,18 @@ class RestrictedCmds(commands.Cog):
             vote_data = []
             for vote_list, vote_type in [(request.yes_votes, "Yes"), (request.no_votes, "No")]:
                 for user_id, vote_count in vote_list:
-                    member = _guild.get_member(user_id) or await _guild.fetch_member(user_id)
-                    display_name = member.display_name if member else f"Unknown User ({user_id})"
-                    vote_data.append((display_name, vote_type, vote_count))
+                    display_name, username = await self._get_user_names(_guild, user_id)
+                    vote_data.append((display_name, username, vote_type, vote_count))
 
             # Sort vote data by display number of votes
-            vote_data.sort(key=lambda x: x[2], reverse=True)
+            vote_data.sort(key=lambda x: x[3], reverse=True)
 
             # Create the table
-            table = "```\nUser            | Vote | Count\n" + "-" * 30 + "\n"
-            for display_name, vote_type, vote_count in vote_data:
-                table += f"{display_name[:15]:<15} | {vote_type:<4} | {vote_count}\n"
+            longest_name = max(len(f"{display_name} ({username})") for display_name, username, _, _ in vote_data)
+            table = f"```\nUser {' ' * (longest_name - 4)}| Vote | Count\n" + "-" * 30 + "\n"
+            for display_name, username, vote_type, vote_count in vote_data:
+                name_field = f"{display_name} ({username})"
+                table += f"{name_field:<{longest_name}} | {vote_type:<4} | {vote_count}\n"
             table += "```"
             embed.add_field(name="Votes", value=table, inline=False)
 
@@ -258,8 +296,8 @@ class RestrictedCmds(commands.Cog):
             if request.feedback:
                 feedback_content = ""
                 for user_id, feedback in request.feedback:
-                    name = (_guild.get_member(user_id) or await _guild.fetch_member(user_id)).display_name
-                    feedback_content += f"# {name}:\n```{feedback}```\n\n"
+                    display_name, username = await self._get_user_names(_guild, user_id)
+                    feedback_content += f"# {display_name} ({username}):\n```{feedback}```\n\n"
                 feedback_file = discord.File(io.StringIO(feedback_content), filename="feedback.md")
             else:
                 embed.add_field(name="Feedback",
@@ -268,9 +306,8 @@ class RestrictedCmds(commands.Cog):
             # Add veto information if any
             if request.veto:
                 veto_user_id, veto_result = request.veto
-                veto_member = _guild.get_member(veto_user_id) or await _guild.fetch_member(veto_user_id)
-                veto_display_name = veto_member.display_name if veto_member else f"Unknown User ({veto_user_id})"
-                veto_text = f"Veto by {veto_display_name}: {'Approved' if veto_result else 'Denied'}"
+                veto_display_name, veto_user_name = await self._get_user_names(_guild, veto_user_id)
+                veto_text = f"Veto by {veto_display_name} ({veto_user_name}): {'Approved' if veto_result else 'Denied'}"
                 embed.add_field(name="Veto", value=veto_text, inline=False)
 
             # Send the embed and feedback file
@@ -279,6 +316,7 @@ class RestrictedCmds(commands.Cog):
         except Exception as e:
             logger.error(f"Error showing votes in thread {thread.id}: {e}")
             ctx.respond("Failed to show voting data.", ephemeral=True)
+
 
     @commands.slash_command(description="Sends the log file as a file attachment. Requires moderator or Paragon roles.")
     async def send_log(self, ctx):
