@@ -455,6 +455,7 @@ async def end_vote(view: VoteView):
             return
 
         # Get the member from the user (yes it's confusing)
+        # NOTE: This will crash if they left the server, which isn't that much of an issue I suppose
         member = guild.get_member(view.thread_owner.id) or await guild.fetch_member(view.thread_owner.id)
 
         if not member:
