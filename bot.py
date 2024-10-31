@@ -221,7 +221,7 @@ class VoteView(discord.ui.View):
             else:
                 await interaction.channel.send(chunk)
 
-    def _get_user_votes(self, user: discord.Member, request: RoleRequest):
+    def _get_user_votes(self, user: discord.Member, request: RoleRequest) -> int:
         """
         Get the number of votes a user can cast based on their roles.
         Dependent on the 'ROLE_VOTES' and 'DEFAULT_VOTE' constants in config.

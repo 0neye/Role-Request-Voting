@@ -1,6 +1,7 @@
 import asyncio
 import io
 import discord
+from typing import Optional, Tuple
 from discord.ext import commands
 from bot import logger, app, end_vote, _init_request
 from config import CHANNEL_ID, COMMAND_WHITELISTED_ROLES, DEV_MODE, LOG_FILE_NAME, MOD_LOG_CHANNEL_ID
@@ -12,7 +13,7 @@ class RestrictedCmds(commands.Cog):
     def __init__(self, bot):
         self.bot: discord.Bot = bot
 
-    async def _restricted_cmd_ctx_to_thread(self, ctx) -> discord.Thread:
+    async def _restricted_cmd_ctx_to_thread(self, ctx) -> Optional[discord.Thread]:
         """
         Performs basic checks for restricted commands and returns the thread if valid.
         Dependent on the 'COMMAND_WHITELISTED_ROLES' and 'CHANNEL_ID' constants in config.
@@ -21,7 +22,7 @@ class RestrictedCmds(commands.Cog):
             ctx (discord.ext.commands.Context): The context of the command.
 
         Returns:
-            discord.Thread | None
+            Optional[discord.Thread]
         """
 
         # Make sure they have the perms
@@ -49,7 +50,7 @@ class RestrictedCmds(commands.Cog):
         return thread
         
     
-    async def _log_command_use(self, ctx, command_name):
+    async def _log_command_use(self, ctx, command_name) -> bool:
         """
         Log command usage to the moderation log channel.
         Dependant on the 'MOD_LOG_CHANNEL' constant in config.
@@ -73,7 +74,7 @@ class RestrictedCmds(commands.Cog):
                 return False
         return True
     
-    async def _get_user_names(self, guild: discord.Guild, user_id: int) -> tuple:
+    async def _get_user_names(self, guild: discord.Guild, user_id: int) -> Tuple[str, str]:
         """
         Get a user's display name, handling cases where the user is not in the guild.
 
@@ -82,13 +83,13 @@ class RestrictedCmds(commands.Cog):
             user_id (int): The ID of the user.
 
         Returns:
-            tuple(str, str): The display name of the user and their global username. Can be identical.
+            Tuple[str, str]: The display name of the user and their global username. Can be identical.
         """
         try:
             member: discord.Member = guild.get_member(user_id) or await guild.fetch_member(user_id)
             return member.display_name, member.name
         except discord.errors.NotFound:
-            user: discord.User | None = self.bot.get_or_fetch_user(user_id)
+            user: Optional[discord.User] = self.bot.get_or_fetch_user(user_id)
             if user is None:
                 return 'User', f'#{user_id}'
    
