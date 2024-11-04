@@ -89,7 +89,7 @@ class RestrictedCmds(commands.Cog):
             member: discord.Member = guild.get_member(user_id) or await guild.fetch_member(user_id)
             return member.display_name, member.name
         except discord.errors.NotFound:
-            user: Optional[discord.User] = self.bot.get_or_fetch_user(user_id)
+            user: Optional[discord.User] = await self.bot.get_or_fetch_user(user_id)
             if user is None:
                 return 'User', f'#{user_id}'
    
