@@ -1,7 +1,8 @@
 import asyncio
 import io
 import discord
-from typing import Optional, Tuple
+from utils import get_user_names, respond_long_message
+from typing import Optional
 from discord.ext import commands
 from bot import logger, app, end_vote, _init_request
 from config import CHANNEL_ID, COMMAND_WHITELISTED_ROLES, DEV_MODE, LOG_FILE_NAME, MOD_LOG_CHANNEL_ID
@@ -73,27 +74,6 @@ class RestrictedCmds(commands.Cog):
                 await ctx.respond("Failed to log command use to moderation log channel.", ephemeral=True)
                 return False
         return True
-    
-    async def _get_user_names(self, guild: discord.Guild, user_id: int) -> Tuple[str, str]:
-        """
-        Get a user's display name, handling cases where the user is not in the guild.
-
-        Args:
-            guild (discord.Guild): The guild the user is in (hopefully).
-            user_id (int): The ID of the user.
-
-        Returns:
-            Tuple[str, str]: The display name of the user and their global username. Can be identical.
-        """
-        try:
-            member: discord.Member = guild.get_member(user_id) or await guild.fetch_member(user_id)
-            return member.display_name, member.name
-        except discord.errors.NotFound:
-            user: Optional[discord.User] = await self.bot.get_or_fetch_user(user_id)
-            if user is None:
-                return 'User', f'#{user_id}'
-   
-            return user.display_name, user.name
 
     @commands.slash_command(description="Manually create a vote in this thread. Requires moderator or Paragon roles.")
     async def create_vote(self, ctx):
@@ -249,6 +229,8 @@ class RestrictedCmds(commands.Cog):
             if thread is None:
                 return
 
+            _guild: discord.Guild = ctx.guild
+
             # Get the most recent request
             request = app.get_request(
                 thread.id) or app.get_closed_requests(thread.id)
@@ -262,61 +244,67 @@ class RestrictedCmds(commands.Cog):
             if not await self._log_command_use(ctx, "show-votes"):
                 return
 
-            # Create an embed to display voting data
-            embed = discord.Embed(
-                title=f"Voting Data for {request.role} Request", color=discord.Color.blue())
-            embed.description = f"**Request Title:** {request.title}\n**Requester:** <@{request.user_id}>"
-            _guild: discord.Guild = ctx.guild
+            # Create a markdown formatted string to display voting data
+            voting_data = f"# Voting Data for {request.role} Request\n\n"
+            voting_data += f"**Request Title:** {request.title}\n"
+            name = await get_user_names(self.bot, _guild, request.user_id)
+            voting_data += f"**Requester:** {name[0]} (<@{request.user_id}>)\n\n"
+
 
             # Get the vote data
             vote_data = []
             for vote_list, vote_type in [(request.yes_votes, "Yes"), (request.no_votes, "No")]:
                 for user_id, vote_count in vote_list:
-                    display_name, username = await self._get_user_names(_guild, user_id)
+                    display_name, username = await get_user_names(self.bot, _guild, user_id)
                     vote_data.append((display_name, username, vote_type, vote_count))
 
-            # Sort vote data by display number of votes
+            # Sort vote data by number of votes
             vote_data.sort(key=lambda x: x[3], reverse=True)
 
-            # Create the table
-            longest_name = max(len(f"{display_name} ({username})") for display_name, username, _, _ in vote_data)
-            table = f"```\nUser {' ' * (longest_name - 4)}| Vote | Count\n" + "-" * 30 + "\n"
+            # Create the table with dynamic field sizes
+            voting_data += "## Votes\n\n"
+            longest_name = max(len(f"{display_name} ({username}):") for display_name, username, _, _ in vote_data)
+            
+            header = f"| {'User':<{longest_name}} | Vote | Count |\n"
+            separator = f"|{'-' * (longest_name + 2)}|------|-------|\n"
+            voting_data += header + separator
+            
             for display_name, username, vote_type, vote_count in vote_data:
-                name_field = f"{display_name} ({username})"
-                table += f"{name_field:<{longest_name}} | {vote_type:<4} | {vote_count}\n"
-            table += "```"
-            embed.add_field(name="Votes", value=table, inline=False)
+                full_name = f"{display_name} ({username}):"
+                voting_data += f"| {full_name:<{longest_name}} | {vote_type:<4} | {vote_count:<5} |\n"
 
             # Add vote totals and outcome
             yes_count, no_count = request.get_votes()
-            embed.add_field(name="Vote Totals",
-                            value=f"Yes: {yes_count}\nNo: {no_count}\nAccepted: {request.result()}", inline=False)
+            voting_data += "\n## Vote Totals\n\n"
+            voting_data += f"- Yes: {yes_count}\n"
+            voting_data += f"- No: {no_count}\n"
+            voting_data += f"- Accepted: {request.result()}\n"
 
             # Create feedback file if any
             feedback_file = None
             if request.feedback:
                 feedback_content = ""
                 for user_id, feedback in request.feedback:
-                    display_name, username = await self._get_user_names(_guild, user_id)
+                    display_name, username = await get_user_names(self.bot, _guild, user_id)
                     feedback_content += f"# {display_name} ({username}):\n```{feedback}```\n\n"
                 feedback_file = discord.File(io.StringIO(feedback_content), filename="feedback.md")
             else:
-                embed.add_field(name="Feedback",
-                                value="No feedback submitted", inline=False)
+                voting_data += "\n## Feedback\n\nNo feedback submitted\n"
 
             # Add veto information if any
             if request.veto:
                 veto_user_id, veto_result = request.veto
-                veto_display_name, veto_user_name = await self._get_user_names(_guild, veto_user_id)
-                veto_text = f"Veto by {veto_display_name} ({veto_user_name}): {'Approved' if veto_result else 'Denied'}"
-                embed.add_field(name="Veto", value=veto_text, inline=False)
+                veto_display_name, veto_user_name = await get_user_names(self.bot, _guild, veto_user_id)
+                voting_data += "\n## Veto\n\n"
+                voting_data += f"Veto by {veto_display_name} ({veto_user_name}): {'Approved' if veto_result else 'Denied'}\n"
 
             # Send the embed and feedback file
-            await ctx.respond(content="Command use logged.", embed=embed, file=feedback_file, ephemeral=True)
+            # await ctx.respond(content="Command use logged.", embed=embed, file=feedback_file, ephemeral=True)
+            await respond_long_message(ctx.interaction, voting_data, use_codeblock=True, file=feedback_file, ephemeral=True)
 
         except Exception as e:
             logger.error(f"Error showing votes in thread {thread.id}: {e}")
-            ctx.respond("Failed to show voting data.", ephemeral=True)
+            await ctx.respond("Failed to show voting data.", ephemeral=True)
 
 
     @commands.slash_command(description="Sends the log file as a file attachment. Requires moderator or Paragon roles.")
