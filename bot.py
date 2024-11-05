@@ -5,17 +5,16 @@ import dotenv
 import logging
 import matplotlib.pyplot as plt
 import io
+from utils import get_user_votes, send_long_message
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime, timezone
 from config import (
     CHECK_TIME,
-    DEFAULT_VOTE,
     PROMPT_AFTER_FIRST_FEEDBACK,
     PROMPT_NO_VOTERS_FOR_FEEDBACK,
     PROMPT_YES_VOTERS_FOR_FEEDBACK,
     VOTE_TIME_PERIOD,
-    ROLE_VOTES,
     CHANNEL_ID,
     DEV_MODE,
     THREAD_TAGS,
@@ -145,7 +144,7 @@ class VoteView(discord.ui.View):
 
                 feedback = modal.feedback.value
 
-            role_votes = self._get_user_votes(user, request)
+            role_votes = get_user_votes(user, request)
 
             # Negate are 'no' votes, positive are 'yes'
             app.vote_on_request(self.thread_id,
@@ -212,37 +211,8 @@ class VoteView(discord.ui.View):
         app.submit_feedback(self.thread_id, user_id, feedback)
 
         # Send public message anonymously
-        # Split feedback into chunks of ~2000 characters (Discord's message limit)
-        feedback_chunks = [feedback[i:i+1960] for i in range(0, len(feedback), 1960)]
-        
-        for i, chunk in enumerate(feedback_chunks):
-            if i == 0:
-                await interaction.channel.send(f"**=== Anonymous Feedback ===**\n{chunk}")
-            else:
-                await interaction.channel.send(chunk)
-
-    def _get_user_votes(self, user: discord.Member, request: RoleRequest) -> int:
-        """
-        Get the number of votes a user can cast based on their roles.
-        Dependent on the 'ROLE_VOTES' and 'DEFAULT_VOTE' constants in config.
-
-        Args:
-            user (discord.Member): The user whose votes are being calculated.
-            request (RoleRequest): The role request being voted on.
-
-        Returns:
-            int: The number of votes the user can cast.
-        """
-
-        if request.ignore_vote_weight:
-            return DEFAULT_VOTE
-
-        res = DEFAULT_VOTE
-        for role in user.roles:
-            if role.name in ROLE_VOTES:
-                res = max(res, ROLE_VOTES[role.name])
-
-        return res
+        feedback = "**=== Anonymous Feedback ===**\n" + feedback
+        await send_long_message(interaction.channel, feedback)
 
     async def _update_displayed_member_count(self):
         """
