@@ -1,7 +1,7 @@
 import asyncio
 import io
 import discord
-from utils import get_user_names, respond_long_message
+from utils import get_user_names, respond_long_message, send_long_message
 from typing import Optional
 from discord.ext import commands
 from bot import logger, app, end_vote, _init_request
@@ -244,6 +244,9 @@ class RestrictedCmds(commands.Cog):
             if not await self._log_command_use(ctx, "show-votes"):
                 return
 
+            # Send a temporary response so we don't time out
+            temp_response = await ctx.interaction.respond("Gathering data...", ephemeral=True)
+
             # Create a markdown formatted string to display voting data
             voting_data = f"# Voting Data for {request.role} Request\n\n"
             voting_data += f"**Request Title:** {request.title}\n"
@@ -300,11 +303,11 @@ class RestrictedCmds(commands.Cog):
 
             # Send the embed and feedback file
             # await ctx.respond(content="Command use logged.", embed=embed, file=feedback_file, ephemeral=True)
-            await respond_long_message(ctx.interaction, voting_data, use_codeblock=True, file=feedback_file, ephemeral=True)
+            await respond_long_message(temp_response, voting_data, use_codeblock=True, file=feedback_file, ephemeral=True)
 
         except Exception as e:
             logger.error(f"Error showing votes in thread {thread.id}: {e}")
-            await ctx.respond("Failed to show voting data.", ephemeral=True)
+            await temp_response.respond("Failed to show voting data.", ephemeral=True)
 
 
     @commands.slash_command(description="Sends the log file as a file attachment. Requires moderator or Paragon roles.")
