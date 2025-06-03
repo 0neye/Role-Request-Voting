@@ -1,0 +1,5 @@
+py-cord>=2.6.1
+python-dotenv>=1.0.0
+matplotlib>=3.7.0
+asyncio>=3.4.3
+typing>=3.7.4.3 
