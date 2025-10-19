@@ -4,9 +4,12 @@ Watches a forum channel for new threads, then posts a message in the thread wher
 Waits a certain amount of time and then ends the voting period, handing out the role if needed. Updates the original message with results.
 
 Examples below:
-![RoleVotingExample1](https://github.com/0neye/Role-Request-Voting/assets/104528236/1a5b08e3-121a-4d71-a055-687f469f2b25)
-![RoleVotingExample2](https://github.com/0neye/Role-Request-Voting/assets/104528236/e350bce6-2869-431e-bdd7-2bd7c0a42fc2)
 
+<img width="1108" height="1087" alt="image" src="https://github.com/user-attachments/assets/a66fd31a-8841-4a54-b0f8-ae3f4b4942b7" />
+
+<img width="882" height="788" alt="image" src="https://github.com/user-attachments/assets/1405771f-d211-4ba3-8f01-5c3112f9dc75" />
+
+<img width="687" height="668" alt="image" src="https://github.com/user-attachments/assets/668fc830-254b-478f-ae27-e512950d1c2d" />
 
 Uses [Pycord](https://pycord.dev/), which is the 'discord' import.
 
