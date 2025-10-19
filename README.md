@@ -2,6 +2,8 @@
 
 Watches a forum channel for new threads, then posts a message in the thread where users can vote on the role request.
 Waits a certain amount of time and then ends the voting period, handing out the role if needed. Updates the original message with results.
+Moderators and Paragons (highest role) can end votes early with their outcome of choice. This effectively allows Paragons to retain veto power on role requests.
+
 
 Examples below:
 
@@ -15,7 +17,7 @@ Uses [Pycord](https://pycord.dev/), which is the 'discord' import.
 
 Help welcome!
 
-Feel free to suggest new features on the discord. I might make a branch testing the prediction market integration.
+Feel free to suggest new features on the Discord. I might make a branch testing the prediction market integration.
 
 TODO:
 - (Suggest additions!)
