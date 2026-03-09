@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from bot import logger, app
+from bot import logger, app, snapshot_member_history
 from config import ACCEPTANCE_THRESHOLDS, CHANNEL_ID, IGNORE_VOTE_WEIGHT, ROLE_VOTES, VALID_ROLES
 
 # Bunch of setup for the help command
@@ -73,10 +73,12 @@ class OpenCmds(commands.Cog):
         """
         Provide help instructions and a link to the source code.
         """
+        await snapshot_member_history(ctx.user, "help command")
         await ctx.respond(help_text)
 
     @commands.slash_command(description="Returns the latency of the bot in ms")
     async def ping(self, ctx):
+        await snapshot_member_history(ctx.user, "ping command")
         latency = self.bot.latency
         latency_ms = latency * 1000
         await ctx.respond(f"`Ping: {latency_ms:.2f}ms`")
@@ -92,6 +94,8 @@ class OpenCmds(commands.Cog):
             ctx (discord.ApplicationContext): The context of the command invocation.
             vote (str): The vote to cast, either "Yes" or "No".
         """
+        await snapshot_member_history(ctx.user, "vote command")
+
         # Check if the command is used in a thread
         if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
             await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
@@ -122,6 +126,8 @@ class OpenCmds(commands.Cog):
         Args:
             ctx (discord.ApplicationContext): The context of the command invocation.
         """
+        await snapshot_member_history(ctx.user, "cancel vote command")
+
         # Check if the command is used in a thread
         if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
             await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)
@@ -153,6 +159,8 @@ class OpenCmds(commands.Cog):
             ctx (discord.ApplicationContext): The context of the command invocation.
             feedback (str): The feedback to submit.
         """
+        await snapshot_member_history(ctx.user, "submit feedback command")
+
         # Check if the command is used in a thread
         if not isinstance(ctx.channel, discord.Thread) or ctx.channel.parent_id != CHANNEL_ID:
             await ctx.respond("This command can only be used in a role request thread.", ephemeral=True)

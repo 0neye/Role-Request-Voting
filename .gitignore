@@ -1,4 +1,7 @@
 .env
+.vscode/
 requests_state.json
+role_history.json
 requests_log.txt
 __pycache__/
+CLAUDE.md

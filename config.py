@@ -11,6 +11,7 @@ class Role:
     can_be_voted_on: bool = True # If true, this role can be voted on
     ignore_vote_weight: bool = False # If true, requests for this role will ignore the vote weight of other roles voting on it
     command_whitelisted: bool = False  # If true, this role can use restricted commands
+    category: str = "rank"  # Controls restore behavior: "rank", "additional", or "other"
 
 
 ROLES = [
@@ -21,6 +22,7 @@ ROLES = [
         can_be_voted_on=False,
         ignore_vote_weight=False,
         command_whitelisted=False,
+        category="rank",
     ),
     Role(
         name="Adept",
@@ -43,11 +45,13 @@ ROLES = [
         votes=DEFAULT_VOTE,
         percent_accept=0.66,
         ignore_vote_weight=True,
+        category="additional",
     ),
     Role(
         name="Visionary",
         votes=DEFAULT_VOTE,
         percent_accept=0.75,
+        category="additional",
     ),
     Role(
         name="Custodian (admin)",
@@ -55,6 +59,7 @@ ROLES = [
         percent_accept=0.0,
         can_be_voted_on=False,
         command_whitelisted=True,
+        category="other",
     ),
     Role(
         name="Sentinel (mod)",
@@ -62,6 +67,7 @@ ROLES = [
         percent_accept=0.0,
         can_be_voted_on=False,
         command_whitelisted=True,
+        category="other",
     ),
     Role(
         name="Bot Manager",
@@ -69,6 +75,7 @@ ROLES = [
         percent_accept=0.0,
         can_be_voted_on=False,
         command_whitelisted=True,
+        category="other",
     ),
 ]
 
@@ -78,6 +85,27 @@ ROLE_VOTES = {role.name: role.votes for role in ROLES}
 
 # Roles that can use restricted commands
 COMMAND_WHITELISTED_ROLES = [role.name for role in ROLES if role.command_whitelisted]
+
+# Role category lookup for restore logic
+ROLE_CATEGORIES = {role.name: role.category for role in ROLES}
+
+# Roles that should be tracked in the restore store
+TRACKED_ROLE_NAMES = [
+    role.name for role in ROLES if role.category in {"rank", "additional"}
+]
+
+# Fallback ordering used if live Discord role positions are unavailable
+RANK_ROLE_ORDER = [
+    "Excelsior",
+    "Paragon",
+    "Expert",
+    "Adept",
+]
+
+# Precomputed lookup for fallback rank ordering
+RANK_ROLE_ORDER_INDEX = {
+    role_name: index for index, role_name in enumerate(RANK_ROLE_ORDER)
+}
 
 # Roles to be voted on
 VALID_ROLES = [role.name for role in ROLES if role.can_be_voted_on]
@@ -104,5 +132,6 @@ PROMPT_AFTER_FIRST_FEEDBACK = True # whether to only prompt people until someone
 CHANNEL_ID = 1101149194498089051  # Forum channel ID
 MOD_LOG_CHANNEL_ID = 546319957827518474  # Channel for moderation logs
 STATE_FILE_NAME = "requests_state.json"
+ROLE_HISTORY_FILE_NAME = "role_history.json"
 LOG_FILE_NAME = "requests_log.txt"
 DEV_MODE = False  # for ease of testing, turns off many checks
