@@ -94,12 +94,6 @@ TRACKED_ROLE_NAMES = [
     role.name for role in ROLES if role.category in {"rank", "additional"}
 ]
 
-# Role names grouped by restore category
-RANK_ROLE_NAMES = [role.name for role in ROLES if role.category == "rank"]
-ADDITIONAL_ROLE_NAMES = [
-    role.name for role in ROLES if role.category == "additional"
-]
-
 # Fallback ordering used if live Discord role positions are unavailable
 RANK_ROLE_ORDER = [
     "Excelsior",
