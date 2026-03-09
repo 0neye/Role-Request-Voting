@@ -22,7 +22,7 @@ ROLES = [
         can_be_voted_on=False,
         ignore_vote_weight=False,
         command_whitelisted=False,
-        category="rank",
+        category="additional",
     ),
     Role(
         name="Adept",
