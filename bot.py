@@ -22,6 +22,7 @@ from config import (
     VALID_ROLES,
     LOG_FILE_NAME,
     CLOSE_POST,
+    TRACKED_ROLE_NAMES,
 )
 from app import RequestsManager
 from request import RoleRequest
@@ -290,6 +291,22 @@ async def restore_member_roles(member: discord.Member):
 
     for skip_message in skip_messages:
         logger.info(f"Restore skip for {member.id}: {skip_message}")
+
+
+def _get_tracked_role_ids(member: discord.Member) -> set[int]:
+    """
+    Get the tracked role IDs currently held by a member.
+
+    Args:
+        member (discord.Member): The member to inspect.
+
+    Returns:
+        set[int]: The tracked role IDs held by the member.
+    """
+
+    return {
+        role.id for role in member.roles if role.name in TRACKED_ROLE_NAMES
+    }
 
 class VoteView(discord.ui.View):
     def __init__(
@@ -755,6 +772,25 @@ async def on_member_join(member: discord.Member):
     # Ignore joins from unrelated guilds because role history is only tracked
     # for the server that owns the configured role request forum
     await restore_member_roles(member)
+
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    """
+    Event handler for when a member is updated.
+
+    Args:
+        before (discord.Member): The member state before the update.
+        after (discord.Member): The member state after the update.
+    """
+
+    if not await is_requests_guild_member(after):
+        return
+
+    if _get_tracked_role_ids(before) == _get_tracked_role_ids(after):
+        return
+
+    await snapshot_member_history(after, "member role update")
 
 
 async def _init_request(thread: discord.Thread):
