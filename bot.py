@@ -90,6 +90,7 @@ async def get_requests_guild() -> Optional[discord.Guild]:
 async def snapshot_member_history(
     member: Optional[Union[discord.Member, discord.User]],
     source: str,
+    additional_roles: Optional[list[discord.Role]] = None,
 ):
     """
     Save the tracked roles currently held by a member.
@@ -97,13 +98,15 @@ async def snapshot_member_history(
     Args:
         member (Optional[Union[discord.Member, discord.User]]): The acting member if available.
         source (str): A short string describing where the snapshot came from.
+        additional_roles (Optional[list[discord.Role]]): Extra roles to include in
+            the snapshot when the cached member state is stale.
     """
 
     if not isinstance(member, discord.Member):
         return
 
     try:
-        role_history.snapshot_member_roles(member)
+        role_history.snapshot_member_roles(member, additional_roles=additional_roles)
         logger.info(
             f"Saved role snapshot for {member.display_name} ({member.id}) from {source}"
         )
@@ -634,7 +637,11 @@ async def end_vote(view: VoteView):
             return
         else:
             await member.add_roles(role)
-            await snapshot_member_history(member, "approved role grant")
+            await snapshot_member_history(
+                member,
+                "approved role grant",
+                additional_roles=[role],
+            )
             await thread.send(
                 f"Congratulations, {view.thread_owner.mention}! Your application for {request.role} has been approved."
             )

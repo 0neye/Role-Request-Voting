@@ -145,12 +145,18 @@ class RoleHistoryManager:
 
         return self.user_role_history.get(user_id)
 
-    def snapshot_member_roles(self, member: discord.Member) -> dict:
+    def snapshot_member_roles(
+        self,
+        member: discord.Member,
+        additional_roles: Optional[list[discord.Role]] = None,
+    ) -> dict:
         """
         Save the member's currently tracked roles as the latest known snapshot.
 
         Args:
             member (discord.Member): The member whose roles should be recorded.
+            additional_roles (Optional[list[discord.Role]]): Extra roles to force
+                into the snapshot when the cached member roles are not yet updated.
 
         Returns:
             dict: The updated user record.
@@ -162,7 +168,14 @@ class RoleHistoryManager:
 
         # Store the latest observed tracked-role set so restores match the
         # member's most recently known state instead of every role ever seen
-        for role in member.roles:
+        roles_to_snapshot = {role.id: role for role in member.roles}
+
+        # Include explicitly supplied roles so post-grant snapshots do not depend
+        # on the gateway cache updating before persistence runs
+        for additional_role in additional_roles or []:
+            roles_to_snapshot[additional_role.id] = additional_role
+
+        for role in roles_to_snapshot.values():
             if role.name not in TRACKED_ROLE_NAMES:
                 continue
 
