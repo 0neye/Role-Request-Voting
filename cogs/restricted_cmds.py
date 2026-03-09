@@ -4,7 +4,7 @@ import discord
 from utils import get_user_names, respond_long_message, send_long_message
 from typing import Optional
 from discord.ext import commands
-from bot import logger, app, end_vote, _init_request
+from bot import logger, app, end_vote, _init_request, snapshot_member_history
 from config import CHANNEL_ID, COMMAND_WHITELISTED_ROLES, DEV_MODE, LOG_FILE_NAME, MOD_LOG_CHANNEL_ID
 
 
@@ -85,6 +85,8 @@ class RestrictedCmds(commands.Cog):
             ctx (discord.ext.commands.Context): The context of the command.
         """
 
+        await snapshot_member_history(ctx.user, "create vote command")
+
         # Get the thread
         thread = await self._restricted_cmd_ctx_to_thread(ctx)
         if thread is None:
@@ -112,6 +114,8 @@ class RestrictedCmds(commands.Cog):
             ctx (discord.ApplicationContext): The context of the command.
             outcome (str): The outcome of the vote ("Approve", "Deny" or "Abstain").
         """
+
+        await snapshot_member_history(ctx.user, "end vote early command")
 
         # Get the thread
         thread = await self._restricted_cmd_ctx_to_thread(ctx)
@@ -160,6 +164,8 @@ class RestrictedCmds(commands.Cog):
         """
 
         try:
+            await snapshot_member_history(ctx.user, "force delete request command")
+
             # Get the thread
             thread = await self._restricted_cmd_ctx_to_thread(ctx)
             if thread is None:
@@ -224,6 +230,8 @@ class RestrictedCmds(commands.Cog):
         """
 
         try:
+            await snapshot_member_history(ctx.user, "show votes command")
+
             # Get the thread
             thread = await self._restricted_cmd_ctx_to_thread(ctx)
             if thread is None:
@@ -318,6 +326,8 @@ class RestrictedCmds(commands.Cog):
         Args:
             ctx (discord.ext.commands.Context): The context of the command.
         """
+
+        await snapshot_member_history(ctx.user, "send log command")
 
         # Get the log file
         log_file = open(LOG_FILE_NAME, "rb")

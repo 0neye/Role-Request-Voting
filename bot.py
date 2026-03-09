@@ -9,6 +9,7 @@ from utils import get_user_votes, send_long_message
 from discord.ext import tasks
 from discord import Embed, Colour
 from datetime import datetime, timezone
+from typing import Optional, Union
 from config import (
     CHECK_TIME,
     PROMPT_AFTER_FIRST_FEEDBACK,
@@ -24,12 +25,18 @@ from config import (
 )
 from app import RequestsManager
 from request import RoleRequest
+from role_history import RoleHistoryManager
 
 # SETUP AND INITIALIZATION
 
-bot = discord.Bot()
+intents = discord.Intents.default()
+intents.members = True
+
+bot = discord.Bot(intents=intents)
 app = RequestsManager()
 app.load_state()
+role_history = RoleHistoryManager()
+role_history.load_state()
 
 # Configure logging
 
@@ -59,6 +66,176 @@ logger = setup_logger()
 
 
 ####################################
+
+
+async def get_requests_guild() -> Optional[discord.Guild]:
+    """
+    Get the guild that owns the configured role request forum channel.
+
+    Returns:
+        Optional[discord.Guild]: The resolved guild if available.
+    """
+
+    channel = bot.get_channel(CHANNEL_ID)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(CHANNEL_ID)
+        except Exception as error:
+            logger.error(f"Failed to fetch configured forum channel {CHANNEL_ID}: {error}")
+            return None
+
+    return getattr(channel, "guild", None)
+
+
+async def snapshot_member_history(
+    member: Optional[Union[discord.Member, discord.User]],
+    source: str,
+):
+    """
+    Save the tracked roles currently held by a member.
+
+    Args:
+        member (Optional[Union[discord.Member, discord.User]]): The acting member if available.
+        source (str): A short string describing where the snapshot came from.
+    """
+
+    if not isinstance(member, discord.Member):
+        return
+
+    try:
+        role_history.snapshot_member_roles(member)
+        logger.info(
+            f"Saved role snapshot for {member.display_name} ({member.id}) from {source}"
+        )
+    except Exception as error:
+        logger.error(
+            f"Failed to save role snapshot for member {member.id} from {source}: {error}"
+        )
+
+
+async def get_assignable_roles(
+    member: discord.Member,
+    roles_to_restore: list[discord.Role],
+) -> tuple[list[discord.Role], list[str]]:
+    """
+    Filter a role list down to roles the bot can safely assign.
+
+    Args:
+        member (discord.Member): The member who may receive roles.
+        roles_to_restore (list[discord.Role]): The candidate roles to restore.
+
+    Returns:
+        tuple[list[discord.Role], list[str]]: Assignable roles and skip reasons.
+    """
+
+    skip_messages: list[str] = []
+
+    if member.id == member.guild.owner_id:
+        skip_messages.append("Cannot restore roles for the server owner")
+        return [], skip_messages
+
+    bot_member = member.guild.me
+    if bot_member is None and bot.user is not None:
+        try:
+            bot_member = await member.guild.fetch_member(bot.user.id)
+        except Exception as error:
+            skip_messages.append(f"Could not resolve the bot member: {error}")
+            return [], skip_messages
+
+    if bot_member is None:
+        skip_messages.append("Could not resolve the bot member")
+        return [], skip_messages
+
+    if not bot_member.guild_permissions.manage_roles:
+        skip_messages.append("Bot is missing the Manage Roles permission")
+        return [], skip_messages
+
+    assignable_roles: list[discord.Role] = []
+    existing_role_ids = {role.id for role in member.roles}
+
+    # Check each role independently so one bad role does not block the rest
+    for role in roles_to_restore:
+        if role.id in existing_role_ids:
+            skip_messages.append(f"Member already has '{role.name}'")
+            continue
+
+        if role.managed:
+            skip_messages.append(f"Role '{role.name}' is managed and cannot be assigned")
+            continue
+
+        if role.position >= bot_member.top_role.position:
+            skip_messages.append(
+                f"Role '{role.name}' is above or equal to the bot's top role"
+            )
+            continue
+
+        assignable_roles.append(role)
+
+    return assignable_roles, skip_messages
+
+
+async def restore_member_roles(member: discord.Member):
+    """
+    Restore tracked roles for a member who has rejoined.
+
+    Args:
+        member (discord.Member): The member who rejoined the guild.
+    """
+
+    highest_rank_role, additional_roles, skip_messages = role_history.get_restore_roles(member)
+
+    if highest_rank_role is None and not additional_roles:
+        if role_history.get_user_history(member.id) is not None:
+            logger.info(
+                f"No restorable roles were found for returning member {member.display_name} ({member.id})"
+            )
+        return
+
+    roles_to_restore: list[discord.Role] = []
+    if highest_rank_role is not None:
+        roles_to_restore.append(highest_rank_role)
+
+    # Avoid restoring the same role twice if a category changed in config
+    seen_role_ids = {role.id for role in roles_to_restore}
+    for role in additional_roles:
+        if role.id not in seen_role_ids:
+            roles_to_restore.append(role)
+            seen_role_ids.add(role.id)
+
+    assignable_roles, assignable_skip_messages = await get_assignable_roles(
+        member,
+        roles_to_restore,
+    )
+    skip_messages.extend(assignable_skip_messages)
+
+    if not assignable_roles:
+        logger.info(
+            f"No roles restored for returning member {member.display_name} ({member.id})"
+        )
+        for skip_message in skip_messages:
+            logger.info(f"Restore skip for {member.id}: {skip_message}")
+        return
+
+    try:
+        await member.add_roles(
+            *assignable_roles,
+            reason="Restoring tracked roles after member rejoined",
+        )
+        restored_role_names = ", ".join(role.name for role in assignable_roles)
+        logger.info(
+            f"Restored roles to {member.display_name} ({member.id}): {restored_role_names}"
+        )
+    except discord.Forbidden:
+        logger.error(
+            f"Failed to restore roles for {member.display_name} ({member.id}) due to missing permissions"
+        )
+    except discord.HTTPException as error:
+        logger.error(
+            f"Failed to restore roles for {member.display_name} ({member.id}): {error}"
+        )
+
+    for skip_message in skip_messages:
+        logger.info(f"Restore skip for {member.id}: {skip_message}")
 
 class VoteView(discord.ui.View):
     def __init__(
@@ -111,6 +288,7 @@ class VoteView(discord.ui.View):
         """
 
         user: discord.Member = interaction.user
+        await snapshot_member_history(user, "vote interaction")
 
         # People can't vote on their own requests
         if user.id == self.thread_owner.id and not DEV_MODE:
@@ -174,6 +352,7 @@ class VoteView(discord.ui.View):
 
         thread_id = self.thread_id
         user_id = interaction.user.id
+        await snapshot_member_history(interaction.user, "cancel vote interaction")
 
         try:
             # Get the request
@@ -206,6 +385,8 @@ class VoteView(discord.ui.View):
             user_id (int): The ID of the user submitting the feedback.
             feedback (str): The feedback to submit.
         """
+
+        await snapshot_member_history(interaction.user, "feedback interaction")
 
         # Submit internally
         app.submit_feedback(self.thread_id, user_id, feedback)
@@ -414,7 +595,13 @@ async def end_vote(view: VoteView):
             return
 
         # Get guild and role from the discord api
-        guild = (bot.get_channel(CHANNEL_ID) or await bot.fetch_guild(CHANNEL_ID)).guild
+        guild = await get_requests_guild()
+        if guild is None:
+            logger.error("Error: Could not resolve the requests guild.")
+            await thread.send("Error: Could not resolve the server.")
+            await _finish_vote(thread, request)
+            return
+
         role = discord.utils.get(guild.roles, name=request.role)
 
         if not role:
@@ -424,9 +611,11 @@ async def end_vote(view: VoteView):
             await _finish_vote(thread, request)
             return
 
-        # Get the member from the user (yes it's confusing)
-        # NOTE: This will crash if they left the server, which isn't that much of an issue I suppose
-        member = guild.get_member(view.thread_owner.id) or await guild.fetch_member(view.thread_owner.id)
+        # Get the member from the user and handle users who already left
+        try:
+            member = guild.get_member(view.thread_owner.id) or await guild.fetch_member(view.thread_owner.id)
+        except discord.NotFound:
+            member = None
 
         if not member:
             logger.error(
@@ -445,6 +634,7 @@ async def end_vote(view: VoteView):
             return
         else:
             await member.add_roles(role)
+            await snapshot_member_history(member, "approved role grant")
             await thread.send(
                 f"Congratulations, {view.thread_owner.mention}! Your application for {request.role} has been approved."
             )
@@ -488,6 +678,19 @@ async def on_ready():
                      thread_title, end_time), message_id=request.bot_message_id)
 
     logger.info("Loaded all active role requests!")
+    logger.info(f"Loaded {len(role_history.user_role_history)} member role snapshots")
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    """
+    Event handler for when a member joins the guild.
+
+    Args:
+        member (discord.Member): The member who joined.
+    """
+
+    await restore_member_roles(member)
 
 
 async def _init_request(thread: discord.Thread):
@@ -522,9 +725,23 @@ async def _init_request(thread: discord.Thread):
 
     # Bunch of work needed to check roles below
     request = app.get_request(thread_id)
-    guild = (bot.get_channel(CHANNEL_ID) or await bot.fetch_guild(CHANNEL_ID)).guild
+    guild = await get_requests_guild()
+    if guild is None:
+        logger.error("Error: Could not resolve the requests guild.")
+        app.remove_request(thread_id)
+        await thread.send("Error: Could not resolve the server for this request.")
+        return
+
     owner = await bot.get_or_fetch_user(thread.owner_id)
-    owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(thread.owner_id)
+    try:
+        owner_m = guild.get_member(thread.owner_id) or await guild.fetch_member(thread.owner_id)
+    except discord.NotFound:
+        logger.error(f"Error: Thread owner {thread.owner_id} is not in the server.")
+        app.remove_request(thread_id)
+        await thread.send("Error: Could not find the request owner in the server.")
+        return
+
+    await snapshot_member_history(owner_m, "request creation")
 
     # People can't apply for a role they already have
     if request.role in [role.name for role in owner_m.roles] and not DEV_MODE:
