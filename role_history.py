@@ -18,7 +18,8 @@ class RoleHistoryManager:
         """
 
         self.file_name = file_name
-        self.user_role_history: dict[int, dict] = {}
+        self.user_role_history: dict[int, dict[int, dict]] = {}
+        self.legacy_user_role_history: dict[int, dict] = {}
 
     def _timestamp(self) -> str:
         """
@@ -30,11 +31,12 @@ class RoleHistoryManager:
 
         return datetime.now(timezone.utc).isoformat()
 
-    def _build_empty_user_record(self, user_id: int) -> dict:
+    def _build_empty_user_record(self, guild_id: int, user_id: int) -> dict:
         """
         Build a new empty record for a user.
 
         Args:
+            guild_id (int): The Discord guild ID.
             user_id (int): The Discord user ID.
 
         Returns:
@@ -42,6 +44,7 @@ class RoleHistoryManager:
         """
 
         return {
+            "guild_id": guild_id,
             "user_id": user_id,
             "roles": {},
             "updated_at": self._timestamp(),
@@ -75,6 +78,108 @@ class RoleHistoryManager:
             "last_seen_at": role_record.get("last_seen_at", self._timestamp()),
         }
 
+    def _normalize_user_record(self, guild_id: int, user_id: int, user_record: dict) -> dict:
+        """
+        Normalize a stored user record for a specific guild.
+
+        Args:
+            guild_id (int): The Discord guild ID that owns the snapshot.
+            user_id (int): The Discord user ID.
+            user_record (dict): The stored user record.
+
+        Returns:
+            dict: The normalized user record.
+        """
+
+        normalized_roles = {}
+        for role_id, role_record in (user_record.get("roles") or {}).items():
+            if not isinstance(role_record, dict):
+                continue
+
+            normalized_role = self._normalize_role_record(role_record)
+            normalized_roles[str(normalized_role["role_id"] or role_id)] = normalized_role
+
+        return {
+            "guild_id": int(user_record.get("guild_id", guild_id)),
+            "user_id": int(user_record.get("user_id", user_id)),
+            "roles": normalized_roles,
+            "updated_at": user_record.get("updated_at", self._timestamp()),
+        }
+
+    def _normalize_guild_users(self, guild_id: int, raw_users: dict) -> dict[int, dict]:
+        """
+        Normalize all user records that belong to one guild.
+
+        Args:
+            guild_id (int): The Discord guild ID.
+            raw_users (dict): The raw serialized users mapping.
+
+        Returns:
+            dict[int, dict]: The normalized user records for the guild.
+        """
+
+        normalized_users: dict[int, dict] = {}
+        for user_id, user_record in raw_users.items():
+            if not isinstance(user_record, dict):
+                continue
+
+            normalized_user_id = int(user_record.get("user_id", user_id))
+            normalized_users[normalized_user_id] = self._normalize_user_record(
+                guild_id,
+                normalized_user_id,
+                user_record,
+            )
+
+        return normalized_users
+
+    def _normalize_legacy_users(self, raw_users: dict) -> dict[int, dict]:
+        """
+        Normalize legacy snapshots that were saved without guild IDs.
+
+        Args:
+            raw_users (dict): The raw serialized legacy users mapping.
+
+        Returns:
+            dict[int, dict]: The normalized legacy user records.
+        """
+
+        normalized_users: dict[int, dict] = {}
+        for user_id, user_record in raw_users.items():
+            if not isinstance(user_record, dict):
+                continue
+
+            normalized_user_id = int(user_record.get("user_id", user_id))
+
+            # Store unknown-guild snapshots separately so restore logic never
+            # trusts data that could have been overwritten by another server
+            normalized_users[normalized_user_id] = self._normalize_user_record(
+                0,
+                normalized_user_id,
+                user_record,
+            )
+
+        return normalized_users
+
+    def get_snapshot_count(self) -> int:
+        """
+        Count all guild-scoped user snapshots currently loaded.
+
+        Returns:
+            int: The number of guild-scoped snapshots.
+        """
+
+        return sum(len(guild_users) for guild_users in self.user_role_history.values())
+
+    def get_legacy_snapshot_count(self) -> int:
+        """
+        Count legacy snapshots that were saved without guild IDs.
+
+        Returns:
+            int: The number of legacy snapshots.
+        """
+
+        return len(self.legacy_user_role_history)
+
     def save_state(self):
         """
         Save the current role history to disk.
@@ -83,10 +188,19 @@ class RoleHistoryManager:
         with open(self.file_name, "w", encoding="utf-8") as file:
             json.dump(
                 {
-                    "users": {
+                    "guilds": {
+                        guild_id: {
+                            "users": {
+                                user_id: user_record
+                                for user_id, user_record in guild_users.items()
+                            }
+                        }
+                        for guild_id, guild_users in self.user_role_history.items()
+                    },
+                    "legacy_users": {
                         user_id: user_record
-                        for user_id, user_record in self.user_role_history.items()
-                    }
+                        for user_id, user_record in self.legacy_user_role_history.items()
+                    },
                 },
                 file,
                 indent=4,
@@ -99,6 +213,7 @@ class RoleHistoryManager:
 
         if not os.path.exists(self.file_name):
             self.user_role_history = {}
+            self.legacy_user_role_history = {}
             return
 
         with open(self.file_name, "r", encoding="utf-8") as file:
@@ -106,44 +221,60 @@ class RoleHistoryManager:
 
         if not file_content:
             self.user_role_history = {}
+            self.legacy_user_role_history = {}
             return
 
         data = json.loads(file_content)
-        raw_users = data.get("users", data) if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            self.user_role_history = {}
+            self.legacy_user_role_history = {}
+            return
 
-        normalized_users = {}
-        for user_id, user_record in raw_users.items():
-            if not isinstance(user_record, dict):
-                continue
+        normalized_guilds: dict[int, dict[int, dict]] = {}
+        raw_guilds = data.get("guilds")
 
-            normalized_roles = {}
-            for role_id, role_record in (user_record.get("roles") or {}).items():
-                if not isinstance(role_record, dict):
+        if isinstance(raw_guilds, dict):
+            for guild_id, guild_record in raw_guilds.items():
+                if not isinstance(guild_record, dict):
                     continue
 
-                normalized_role = self._normalize_role_record(role_record)
-                normalized_roles[str(normalized_role["role_id"] or role_id)] = normalized_role
+                normalized_guild_id = int(guild_id)
+                raw_users = guild_record.get("users", guild_record)
+                if not isinstance(raw_users, dict):
+                    continue
 
-            normalized_users[int(user_id)] = {
-                "user_id": int(user_record.get("user_id", user_id)),
-                "roles": normalized_roles,
-                "updated_at": user_record.get("updated_at", self._timestamp()),
-            }
+                normalized_guilds[normalized_guild_id] = self._normalize_guild_users(
+                    normalized_guild_id,
+                    raw_users,
+                )
 
-        self.user_role_history = normalized_users
+            raw_legacy_users = data.get("legacy_users", {})
+            if isinstance(raw_legacy_users, dict):
+                self.legacy_user_role_history = self._normalize_legacy_users(raw_legacy_users)
+            else:
+                self.legacy_user_role_history = {}
+        else:
+            raw_legacy_users = data.get("users", data)
+            if isinstance(raw_legacy_users, dict):
+                self.legacy_user_role_history = self._normalize_legacy_users(raw_legacy_users)
+            else:
+                self.legacy_user_role_history = {}
 
-    def get_user_history(self, user_id: int) -> Optional[dict]:
+        self.user_role_history = normalized_guilds
+
+    def get_user_history(self, guild_id: int, user_id: int) -> Optional[dict]:
         """
-        Get stored role history for a user.
+        Get stored role history for a user in one guild.
 
         Args:
+            guild_id (int): The Discord guild ID.
             user_id (int): The Discord user ID.
 
         Returns:
             Optional[dict]: The stored user record if one exists.
         """
 
-        return self.user_role_history.get(user_id)
+        return self.user_role_history.get(guild_id, {}).get(user_id)
 
     def snapshot_member_roles(
         self,
@@ -162,7 +293,12 @@ class RoleHistoryManager:
             dict: The updated user record.
         """
 
-        user_record = self.user_role_history.get(member.id) or self._build_empty_user_record(member.id)
+        guild_id = member.guild.id
+        guild_users = self.user_role_history.get(guild_id) or {}
+        user_record = guild_users.get(member.id) or self._build_empty_user_record(
+            guild_id,
+            member.id,
+        )
         snapshot_time = self._timestamp()
         tracked_roles = {}
 
@@ -188,7 +324,8 @@ class RoleHistoryManager:
 
         user_record["roles"] = tracked_roles
         user_record["updated_at"] = snapshot_time
-        self.user_role_history[member.id] = user_record
+        guild_users[member.id] = user_record
+        self.user_role_history[guild_id] = guild_users
         self.save_state()
 
         return user_record
@@ -274,7 +411,7 @@ class RoleHistoryManager:
                 The highest rank role, additional roles, and skipped-role messages.
         """
 
-        user_record = self.get_user_history(member.id)
+        user_record = self.get_user_history(member.guild.id, member.id)
         if user_record is None:
             return None, [], []
 

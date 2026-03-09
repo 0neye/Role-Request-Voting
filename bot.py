@@ -63,6 +63,7 @@ def setup_logger():
 
 
 logger = setup_logger()
+requests_guild_id: Optional[int] = None
 
 
 ####################################
@@ -87,6 +88,45 @@ async def get_requests_guild() -> Optional[discord.Guild]:
     return getattr(channel, "guild", None)
 
 
+async def get_requests_guild_id() -> Optional[int]:
+    """
+    Get and cache the guild ID for the configured request forum.
+
+    Returns:
+        Optional[int]: The configured request guild ID if available.
+    """
+
+    global requests_guild_id
+
+    if requests_guild_id is not None:
+        return requests_guild_id
+
+    requests_guild = await get_requests_guild()
+    if requests_guild is None:
+        return None
+
+    requests_guild_id = requests_guild.id
+    return requests_guild_id
+
+
+async def is_requests_guild_member(member: discord.Member) -> bool:
+    """
+    Check whether a member belongs to the configured request guild.
+
+    Args:
+        member (discord.Member): The member to validate.
+
+    Returns:
+        bool: True when the member belongs to the request guild.
+    """
+
+    cached_requests_guild_id = await get_requests_guild_id()
+    if cached_requests_guild_id is None:
+        return False
+
+    return member.guild.id == cached_requests_guild_id
+
+
 async def snapshot_member_history(
     member: Optional[Union[discord.Member, discord.User]],
     source: str,
@@ -105,14 +145,22 @@ async def snapshot_member_history(
     if not isinstance(member, discord.Member):
         return
 
+    resolved_member: discord.Member = member
+
+    if not await is_requests_guild_member(resolved_member):
+        return
+
     try:
-        role_history.snapshot_member_roles(member, additional_roles=additional_roles)
+        role_history.snapshot_member_roles(
+            resolved_member,
+            additional_roles=additional_roles,
+        )
         logger.info(
-            f"Saved role snapshot for {member.display_name} ({member.id}) from {source}"
+            f"Saved role snapshot for {resolved_member.display_name} ({resolved_member.id}) from {source}"
         )
     except Exception as error:
         logger.error(
-            f"Failed to save role snapshot for member {member.id} from {source}: {error}"
+            f"Failed to save role snapshot for member {resolved_member.id} from {source}: {error}"
         )
 
 
@@ -185,10 +233,13 @@ async def restore_member_roles(member: discord.Member):
         member (discord.Member): The member who rejoined the guild.
     """
 
+    if not await is_requests_guild_member(member):
+        return
+
     highest_rank_role, additional_roles, skip_messages = role_history.get_restore_roles(member)
 
     if highest_rank_role is None and not additional_roles:
-        if role_history.get_user_history(member.id) is not None:
+        if role_history.get_user_history(member.guild.id, member.id) is not None:
             logger.info(
                 f"No restorable roles were found for returning member {member.display_name} ({member.id})"
             )
@@ -683,7 +734,13 @@ async def on_ready():
                      thread_title, end_time), message_id=request.bot_message_id)
 
     logger.info("Loaded all active role requests!")
-    logger.info(f"Loaded {len(role_history.user_role_history)} member role snapshots")
+    await get_requests_guild_id()
+    logger.info(f"Loaded {role_history.get_snapshot_count()} member role snapshots")
+
+    if role_history.get_legacy_snapshot_count():
+        logger.warning(
+            "Ignored legacy role snapshots without guild IDs until fresh guild-scoped snapshots are captured"
+        )
 
 
 @bot.event
@@ -695,6 +752,8 @@ async def on_member_join(member: discord.Member):
         member (discord.Member): The member who joined.
     """
 
+    # Ignore joins from unrelated guilds because role history is only tracked
+    # for the server that owns the configured role request forum
     await restore_member_roles(member)
 
 
