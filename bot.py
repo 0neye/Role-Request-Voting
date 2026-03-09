@@ -389,8 +389,6 @@ class VoteView(discord.ui.View):
             feedback (str): The feedback to submit.
         """
 
-        await snapshot_member_history(interaction.user, "feedback interaction")
-
         # Submit internally
         app.submit_feedback(self.thread_id, user_id, feedback)
 
