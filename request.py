@@ -46,6 +46,9 @@ class RoleRequest:
             else:
                 raise ValueError("Invalid role.")
 
+        if self.role not in ACCEPTANCE_THRESHOLDS:
+            raise ValueError(f"Invalid or retired role: {self.role}")
+
         self.threshold = ACCEPTANCE_THRESHOLDS[self.role]
         self.ignore_vote_weight = self.role in IGNORE_VOTE_WEIGHT
 
@@ -74,6 +77,8 @@ class RoleRequest:
         instance.feedback = data.get("feedback") or []
         instance.num_users = data.get("num_users") or 0
         instance.veto = data.get("veto")
+        instance.threshold = data.get("threshold", instance.threshold)
+        instance.ignore_vote_weight = data.get("ignore_vote_weight", instance.ignore_vote_weight)
         instance.closed = data.get("closed") or int(
             instance.end_time) < int(datetime.now(timezone.utc).timestamp())
 
@@ -212,6 +217,8 @@ class RoleRequest:
             "end_time": self.end_time,
             "bot_message_id": self.bot_message_id,
             "role": self.role,
+            "threshold": self.threshold,
+            "ignore_vote_weight": self.ignore_vote_weight,
             "yes_votes": self.yes_votes,
             "no_votes": self.no_votes,
             "feedback": self.feedback,

@@ -256,15 +256,51 @@ class RestrictedCmds(commands.Cog):
             temp_response = await ctx.interaction.respond("Gathering data...", ephemeral=True)
 
             # Create a markdown formatted string to display voting data
-            voting_data = f"# Voting Data for {request.role} Request\n\n"
-            voting_data += f"**Request Title:** {request.title}\n"
-            name = await get_user_names(self.bot, _guild, request.user_id)
-            voting_data += f"**Requester:** {name[0]} (<@{request.user_id}>)\n\n"
+            is_legacy_record = isinstance(request, dict)
+
+            if is_legacy_record:
+                request_role = request.get("role", "Unknown")
+                request_title = request.get("title", "(Unknown title)")
+                request_user_id = request.get("user_id", 0)
+                yes_votes = request.get("yes_votes") or []
+                no_votes = request.get("no_votes") or []
+                feedback_items = request.get("feedback") or []
+                veto_info = request.get("veto")
+
+                yes_count = sum(vote[1] for vote in yes_votes) if yes_votes else 0
+                no_count = sum(vote[1] for vote in no_votes) if no_votes else 0
+
+                if veto_info is not None and len(veto_info) >= 2:
+                    request_accepted = bool(veto_info[1])
+                else:
+                    threshold = request.get("threshold")
+                    if threshold is None:
+                        request_accepted = "Unknown (legacy retired-role record)"
+                    else:
+                        total = yes_count + no_count
+                        request_accepted = (
+                            (yes_count / (total if total > 0 else 1)) >= float(threshold)
+                        )
+            else:
+                request_role = request.role
+                request_title = request.title
+                request_user_id = request.user_id
+                yes_votes = request.yes_votes
+                no_votes = request.no_votes
+                feedback_items = request.feedback
+                veto_info = request.veto
+                yes_count, no_count = request.get_votes()
+                request_accepted = request.result()
+
+            voting_data = f"# Voting Data for {request_role} Request\n\n"
+            voting_data += f"**Request Title:** {request_title}\n"
+            name = await get_user_names(self.bot, _guild, request_user_id)
+            voting_data += f"**Requester:** {name[0]} (<@{request_user_id}>)\n\n"
 
 
             # Get the vote data
             vote_data = []
-            for vote_list, vote_type in [(request.yes_votes, "Yes"), (request.no_votes, "No")]:
+            for vote_list, vote_type in [(yes_votes, "Yes"), (no_votes, "No")]:
                 for user_id, vote_count in vote_list:
                     display_name, username = await get_user_names(self.bot, _guild, user_id)
                     vote_data.append((display_name, username, vote_type, vote_count))
@@ -274,28 +310,29 @@ class RestrictedCmds(commands.Cog):
 
             # Create the table with dynamic field sizes
             voting_data += "## Votes\n\n"
-            longest_name = max(len(f"{display_name} ({username}):") for display_name, username, _, _ in vote_data)
-            
-            header = f"| {'User':<{longest_name}} | Vote | Count |\n"
-            separator = f"|{'-' * (longest_name + 2)}|------|-------|\n"
-            voting_data += header + separator
-            
-            for display_name, username, vote_type, vote_count in vote_data:
-                full_name = f"{display_name} ({username}):"
-                voting_data += f"| {full_name:<{longest_name}} | {vote_type:<4} | {vote_count:<5} |\n"
+            if vote_data:
+                longest_name = max(len(f"{display_name} ({username}):") for display_name, username, _, _ in vote_data)
+                header = f"| {'User':<{longest_name}} | Vote | Count |\n"
+                separator = f"|{'-' * (longest_name + 2)}|------|-------|\n"
+                voting_data += header + separator
+
+                for display_name, username, vote_type, vote_count in vote_data:
+                    full_name = f"{display_name} ({username}):"
+                    voting_data += f"| {full_name:<{longest_name}} | {vote_type:<4} | {vote_count:<5} |\n"
+            else:
+                voting_data += "No votes recorded.\n"
 
             # Add vote totals and outcome
-            yes_count, no_count = request.get_votes()
             voting_data += "\n## Vote Totals\n\n"
             voting_data += f"- Yes: {yes_count}\n"
             voting_data += f"- No: {no_count}\n"
-            voting_data += f"- Accepted: {request.result()}\n"
+            voting_data += f"- Accepted: {request_accepted}\n"
 
             # Create feedback file if any
             feedback_file = None
-            if request.feedback:
+            if feedback_items:
                 feedback_content = ""
-                for user_id, feedback in request.feedback:
+                for user_id, feedback in feedback_items:
                     display_name, username = await get_user_names(self.bot, _guild, user_id)
                     feedback_content += f"# {display_name} ({username}):\n```{feedback}```\n\n"
                 feedback_file = discord.File(io.StringIO(feedback_content), filename="feedback.md")
@@ -303,8 +340,8 @@ class RestrictedCmds(commands.Cog):
                 voting_data += "\n## Feedback\n\nNo feedback submitted\n"
 
             # Add veto information if any
-            if request.veto:
-                veto_user_id, veto_result = request.veto
+            if veto_info:
+                veto_user_id, veto_result = veto_info
                 veto_display_name, veto_user_name = await get_user_names(self.bot, _guild, veto_user_id)
                 voting_data += "\n## Veto\n\n"
                 voting_data += f"Veto by {veto_display_name} ({veto_user_name}): {'Approved' if veto_result else 'Denied'}\n"

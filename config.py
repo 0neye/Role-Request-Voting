@@ -48,12 +48,6 @@ ROLES = [
         category="additional",
     ),
     Role(
-        name="Visionary",
-        votes=DEFAULT_VOTE,
-        percent_accept=0.75,
-        category="additional",
-    ),
-    Role(
         name="Custodian (admin)",
         votes=DEFAULT_VOTE,
         percent_accept=0.0,
