@@ -46,6 +46,9 @@ class RoleRequest:
             else:
                 raise ValueError("Invalid role.")
 
+        if self.role not in ACCEPTANCE_THRESHOLDS:
+            raise ValueError(f"Invalid or retired role: {self.role}")
+
         self.threshold = ACCEPTANCE_THRESHOLDS[self.role]
         self.ignore_vote_weight = self.role in IGNORE_VOTE_WEIGHT
 

@@ -5,6 +5,14 @@ from config import STATE_FILE_NAME
 from typing import Optional
 
 
+def _try_parse_request(request_data: dict, description: str) -> Optional[RoleRequest]:
+    try:
+        return RoleRequest.from_dict(request_data)
+    except ValueError as error:
+        print(f"Skipping {description}: {error}")
+        return None
+
+
 class RequestsManager:
     def __init__(self):
         """
@@ -215,14 +223,25 @@ class RequestsManager:
                         "closed_requests": {},
                     }
 
-                self.requests = {
-                    int(request_id): RoleRequest.from_dict(request_data)
-                    for request_id, request_data in data.get("requests", {}).items()
-                }
-                self.closed_requests = {
-                    int(request_id): [RoleRequest.from_dict(request_data) for request_data in requests]
-                    for request_id, requests in data.get("closed_requests", {}).items()
-                }
+                loaded_requests: dict[int, RoleRequest] = {}
+                for request_id, request_data in data.get("requests", {}).items():
+                    parsed_request_id = int(request_id)
+                    request = _try_parse_request(request_data, f"active request {parsed_request_id}")
+                    if request is not None:
+                        loaded_requests[parsed_request_id] = request
+
+                loaded_closed_requests: dict[int, list[RoleRequest]] = {}
+                for request_id, requests in data.get("closed_requests", {}).items():
+                    parsed_request_id = int(request_id)
+                    parsed_requests = [
+                        r for request_data in requests
+                        if (r := _try_parse_request(request_data, f"closed request record in thread {parsed_request_id}")) is not None
+                    ]
+                    if parsed_requests:
+                        loaded_closed_requests[parsed_request_id] = parsed_requests
+
+                self.requests = loaded_requests
+                self.closed_requests = loaded_closed_requests
             print("Loaded requests state from file.")
         else:
             self.requests = {}
