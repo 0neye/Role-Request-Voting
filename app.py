@@ -13,6 +13,14 @@ def _try_parse_request(request_data: dict, description: str) -> Optional[RoleReq
         return None
 
 
+def _serialize_request(request_obj):
+    if isinstance(request_obj, RoleRequest):
+        return request_obj.to_dict()
+    if isinstance(request_obj, dict):
+        return request_obj
+    raise TypeError(f"Unsupported request object type: {type(request_obj)}")
+
+
 class RequestsManager:
     def __init__(self):
         """
@@ -126,7 +134,7 @@ class RequestsManager:
         except KeyError:
             return None
 
-    def get_closed_requests(self, thread_id: int) -> Optional[list[RoleRequest]]:
+    def get_closed_requests(self, thread_id: int) -> Optional[list[RoleRequest | dict]]:
         """
         Get a history of closed requests in a thread by its ID.
 
@@ -134,7 +142,7 @@ class RequestsManager:
             thread_id (int): The ID of the request thread.
 
         Returns:
-            list[RoleRequest] | None: List of role request objects or None if not found.
+            list[RoleRequest | dict] | None: List of closed request records or None if not found.
         """
 
         try:
@@ -191,7 +199,7 @@ class RequestsManager:
                         for request_id, request in self.requests.items()
                     },
                     "closed_requests": {
-                        request_id: [request.to_dict() for request in requests]
+                        request_id: [_serialize_request(request) for request in requests]
                         for request_id, requests in self.closed_requests.items()
                     },
                 },
@@ -230,13 +238,21 @@ class RequestsManager:
                     if request is not None:
                         loaded_requests[parsed_request_id] = request
 
-                loaded_closed_requests: dict[int, list[RoleRequest]] = {}
+                loaded_closed_requests: dict[int, list[RoleRequest | dict]] = {}
                 for request_id, requests in data.get("closed_requests", {}).items():
                     parsed_request_id = int(request_id)
-                    parsed_requests = [
-                        r for request_data in requests
-                        if (r := _try_parse_request(request_data, f"closed request record in thread {parsed_request_id}")) is not None
-                    ]
+                    parsed_requests: list[RoleRequest | dict] = []
+                    for request_data in requests:
+                        parsed_request = _try_parse_request(
+                            request_data,
+                            f"closed request record in thread {parsed_request_id}",
+                        )
+                        # Keep unparsable records as raw dicts (e.g., retired roles)
+                        # so they are preserved in the state file across restarts.
+                        parsed_requests.append(
+                            parsed_request if parsed_request is not None else request_data
+                        )
+
                     if parsed_requests:
                         loaded_closed_requests[parsed_request_id] = parsed_requests
 
