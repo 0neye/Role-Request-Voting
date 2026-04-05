@@ -1,6 +1,7 @@
 from config import ACCEPTANCE_THRESHOLDS, IGNORE_VOTE_WEIGHT, VALID_ROLES
 import re
 from datetime import datetime, timezone
+from typing import Optional, Tuple
 
 
 class RoleRequest:
@@ -31,7 +32,7 @@ class RoleRequest:
         self.num_users: int = 0  # Number of users that cast a vote
 
         # (int, bool) = (user_id, veto); user being the one to make the veto
-        self.veto: None | (int, bool) = None
+        self.veto: Optional[Tuple[int, bool]] = None
         self.ignore_vote_weight = False
 
         self.closed = False

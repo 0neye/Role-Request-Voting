@@ -2,7 +2,7 @@ import os
 from request import RoleRequest
 import json
 from config import STATE_FILE_NAME
-from typing import Optional
+from typing import Optional, Union
 
 
 def _try_parse_request(request_data: dict, description: str) -> Optional[RoleRequest]:
@@ -134,7 +134,7 @@ class RequestsManager:
         except KeyError:
             return None
 
-    def get_closed_requests(self, thread_id: int) -> Optional[list[RoleRequest | dict]]:
+    def get_closed_requests(self, thread_id: int) -> Optional[list[Union[RoleRequest, dict]]]:
         """
         Get a history of closed requests in a thread by its ID.
 
@@ -238,10 +238,10 @@ class RequestsManager:
                     if request is not None:
                         loaded_requests[parsed_request_id] = request
 
-                loaded_closed_requests: dict[int, list[RoleRequest | dict]] = {}
+                loaded_closed_requests: dict[int, list[Union[RoleRequest, dict]]] = {}
                 for request_id, requests in data.get("closed_requests", {}).items():
                     parsed_request_id = int(request_id)
-                    parsed_requests: list[RoleRequest | dict] = []
+                    parsed_requests: list[Union[RoleRequest, dict]] = []
                     for request_data in requests:
                         parsed_request = _try_parse_request(
                             request_data,
